@@ -22,7 +22,7 @@ def list_agents():
 
     return agents
 
-def decode_action(action, depth, height, width):
+def decode_action(action, height, width):
     z, rem = divmod(action, height * width)
     y, x = divmod(rem, width)
     return z, y, x
@@ -31,12 +31,10 @@ def main():
     # ----- Parse arguments -----
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", "-a", type=str, default=None, help="Name of agent (matching agents/<name>.py)")
-    parser.add_argument("--size", "-s", type=int, default=5, help="Determine dimensions of Minesweeper board")
-    parser.add_argument("--num_mines", "-m", type=int, default=10, help="Determine number of mines present on board")
     args = parser.parse_args()
 
-    size = args.size
-    num_mines = args.num_mines
+    size = 5
+    num_mines = 15
 
     # ----- List agents -----
     available = list_agents()
@@ -70,7 +68,7 @@ def main():
 
         action = agent.select_action(obs)
 
-        z, y, x = decode_action(action, env.depth, env.height, env.width)
+        z, y, x = decode_action(action, env.height, env.width)
         print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
 
         obs, reward, terminated, truncated, info = env.step(action)

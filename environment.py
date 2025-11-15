@@ -21,7 +21,9 @@ class MinesweeperEnv(gym.Env):
         self.action_space = spaces.Discrete(self.height * self.width * self.depth)
         
     def _decode_action(self, action): 
-        return divmod(action, self.height * self.width)[0], *divmod(divmod(action, self.height * self.width)[1], self.width)
+        z, rem = divmod(action, self.height * self.width)
+        y, x = divmod(rem, self.width)
+        return z, y, x
         
     def reset(self, seed=None, options=None): 
         super().reset(seed=seed)
