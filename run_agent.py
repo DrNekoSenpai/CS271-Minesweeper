@@ -31,6 +31,7 @@ def main():
     # ----- Parse arguments -----
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", "-a", type=str, default=None, help="Name of agent (matching agents/<name>.py)")
+    parser.add_argument("--render", "-r", type=str, choices=["ansi", "3d"], default='ansi')
     args = parser.parse_args()
 
     size = 5
@@ -52,7 +53,7 @@ def main():
         return
 
     # ----- Create environment -----
-    env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=num_mines, render_mode="ansi")
+    env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=num_mines, render_mode=args.render)
 
     # ----- Load agent -----
     agent = load_agent(args.agent, env.action_space)
@@ -63,20 +64,19 @@ def main():
     episode_reward = 0
 
     while not done:
-        print(env.render())
-        print("----")
-
         action = agent.select_action(obs)
-
         z, y, x = decode_action(action, env.height, env.width)
-        print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
 
         obs, reward, terminated, truncated, info = env.step(action)
         episode_reward += reward
 
-        print(f"Reward: {reward}")
-        print()
-
+        if args.render == 'ansi': 
+            print(env.render())
+            print("----")
+            print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
+            print(f"Reward: {reward}")
+            print()
+            
         done = terminated or truncated
 
     print(env.render())
