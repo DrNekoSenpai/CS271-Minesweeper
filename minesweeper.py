@@ -3,12 +3,14 @@ from collections import deque
 from itertools import product
 
 class Minesweeper:
-    def __init__(self, width=8, height=8, depth=8, num_mines=10, seed=None): 
-        self.width = width 
+    def __init__(self, height=5, width=5, depth=5, num_mines=10, seed=None): 
         self.height = height 
+        self.width = width 
         self.depth = depth 
         self.num_mines = num_mines
         self.rng = np.random.default_rng(seed) 
+
+        self.new_game()
 
     def new_game(self): 
         """
@@ -16,14 +18,21 @@ class Minesweeper:
 
         Returns: (np.ndarray) A copy of the initial visible board representing the observation returned to the agent. Hidden tiles are encoded as -1.
         """
-        self.visible = np.full((self.height, self.width, self.depth), -1, dtype=int)
-        self.board = np.zeros((self.height, self.width, self.depth), dtype=int)
+        self.visible = np.full((self.height, self.width, self.depth), -2, dtype=int)
+        
+        # Expose all six sides of the cube so that the agent / player can only click on the top layer, decreasing complexity 
+        self.visible[0, :, :]  = -1
+        self.visible[-1, :, :] = -1
+        self.visible[:, 0, :]  = -1
+        self.visible[:, -1, :] = -1
+        self.visible[:, :, 0]  = -1
+        self.visible[:, :, -1] = -1
 
+        self.board = np.zeros((self.height, self.width, self.depth), dtype=int)
         mine_positions = self.rng.choice(self.depth * self.height * self.width, self.num_mines, replace=False)
 
         for mine in mine_positions: 
-            x, rem = divmod(mine, self.height * self.width)
-            y, z = divmod(rem, self.width) 
+            x, y, z = divmod(mine, self.height * self.width)[0], *divmod(divmod(mine, self.height * self.width)[1], self.width)
 
             # -1 is mine
             self.board[x, y, z] = -1
@@ -50,19 +59,18 @@ class Minesweeper:
 
         # Case for hitting a mine 
         if self.board[x, y, z] == -1:
-            self.visible[x, y, z] == -10
+            self.visible[x, y, z] = -10
             self.game_over = True 
             self.win = False 
             return
 
         # Reveal all adjacent tiles if applicable
         self._flood_reveal(x, y, z)
+        self.update_surface_mask()
 
         if np.sum(self.visible != -1) == (self.width * self.height * self.depth - self.num_mines): 
             self.game_over = True 
             self.win = True 
-
-        return
 
     def _flood_reveal(self, x, y, z): 
         """
@@ -102,9 +110,39 @@ class Minesweeper:
         Returns: (int) Number of adjacent mines. Returns 0 if no neighbors contain mines. 
         """
         directions = [(dx, dy, dz) for dx, dy, dz in product((-1, 0, 1), repeat=3) if not (dx == dy == dz == 0)]
+        count = 0
+
         for dx, dy, dz in directions: 
             nx = x + dx; ny = y + dy; nz = z + dz
             if 0 <= nx < self.height and 0 <= ny < self.width and 0 <= nz < self.depth: 
                 if self.board[nx, ny, nz] == -1: count += 1
 
         return count 
+    
+    def update_surface_mask(self): 
+        """
+        Classifies all unrevealed tiles as exposed or buried based on their adjacency to revealed space. An unrevealed tile is considered "exposed" if at least one of its six face-adjacent neighbors has been revealed, meaning it is on the current outer surface of the carved three-dimensional Minesweeper volume.  
+
+        Value conventions: 
+          -1 : exposed (legal action target) 
+          -2 : buried  (illegal action target) 
+        """
+        for x, y, z in product(range(self.height), range(self.width), range(self.depth)): 
+            if self.visible[x, y, z] >= 0: continue 
+
+            if x in (0, self.height-1) or y in (0, self.width-1) or z in (0, self.depth-1): 
+                self.visible[x, y, z] = -1
+                continue
+
+            exposed = False 
+
+            for dx, dy, dz in [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)]: 
+                nx, ny, nz = x + dx, y + dy, z + dz 
+
+                if 0 <= nx < self.height and 0 <= ny < self.width and 0 <= nz < self.depth: 
+                    if self.visible[nx, ny, nz] >= 0: exposed = True; break 
+
+            self.visible[x, y, z] = -1 if exposed else -2 
+
+if __name__ == "__main__": 
+    print("This module is not meant to be run on its own! Please use ./run_agent.py instead.")
