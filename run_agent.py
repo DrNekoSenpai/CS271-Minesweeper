@@ -64,19 +64,31 @@ def main():
     episode_reward = 0
 
     while not done:
+        if args.render == 'ansi': 
+            print(env.render())
+            print("----")
+
+        elif args.render == '3d': 
+            env.render()
+            cmd = input("Press Enter to step, 'n' for new game, 'q' to quit: ").strip().lower()
+            if cmd == "q":
+                break
+            if cmd == "n":
+                obs, info = env.reset()
+                episode_reward = 0.0
+                done = False
+                continue
+                    
         action = agent.select_action(obs)
         z, y, x = decode_action(action, env.height, env.width)
 
         obs, reward, terminated, truncated, info = env.step(action)
         episode_reward += reward
 
-        if args.render == 'ansi': 
-            print(env.render())
-            print("----")
-            print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
-            print(f"Reward: {reward}")
-            print()
-            
+        print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
+        print(f"Reward: {reward}")
+        print(f"Total: {episode_reward}")
+
         done = terminated or truncated
 
     print(env.render())
