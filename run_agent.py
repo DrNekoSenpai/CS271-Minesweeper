@@ -1,5 +1,5 @@
 import importlib, argparse, os 
-from environment import MinesweeperEnv
+from backend.environment import MinesweeperEnv
 
 def load_agent(agent_name, action_space): 
     try: 
