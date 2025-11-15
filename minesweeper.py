@@ -128,7 +128,7 @@ class Minesweeper:
           -2 : buried  (illegal action target) 
         """
         for x, y, z in product(range(self.height), range(self.width), range(self.depth)): 
-            if self.visible[x, y, z] >= 0: continue 
+            if self.visible[x, y, z] not in [-1, -2]: continue 
 
             if x in (0, self.height-1) or y in (0, self.width-1) or z in (0, self.depth-1): 
                 self.visible[x, y, z] = -1

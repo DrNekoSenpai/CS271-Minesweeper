@@ -90,10 +90,10 @@ class MinesweeperEnv(gym.Env):
                 row = []
                 for x in range(self.width):
                     v = obs[z, y, x]
-                    if v == -2: row.append("█")        # buried/unexposed
-                    elif v == -1: row.append("?")        # exposed but unknown
-                    elif v == -3: row.append("*")        # revealed mine
-                    else: row.append(str(v))     # revealed number 0–26
+                    if v == -2: row.append("█")   # buried/unexposed
+                    elif v == -1: row.append("?") # exposed but unknown
+                    elif v == -10: row.append("*") # revealed mine
+                    else: row.append(str(v))      # revealed number 0–26
                 out.append(" ".join(row))
 
         num_lines = self.depth + 1
