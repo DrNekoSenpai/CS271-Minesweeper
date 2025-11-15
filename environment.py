@@ -72,32 +72,39 @@ class MinesweeperEnv(gym.Env):
         return obs, reward, False, False, {}
     
     def render_ansi(self):
+        """
+        Text-based 3D visualization of the board.
+        Dimensions follow the convention:
+            x = width
+            y = height
+            z = depth (layers)
+        The observation obs[z, y, x] is printed one z-layer at a time.
+        """
         obs = self.game.get_observation()
         out = []
 
+        # Build each z-layer view
         for z in range(self.depth):
             out.append(f"Layer z={z}")
-            for r in range(self.height):
+            for y in range(self.height):
                 row = []
-                for c in range(self.width):
-                    v = obs[z, r, c]
-                    if v == -2:
-                        row.append("█")   # buried
-                    elif v == -1:
-                        row.append("?")   # exposed
-                    elif v == -3:
-                        row.append("*")   # mine hit
-                    else:
-                        row.append(str(v))
+                for x in range(self.width):
+                    v = obs[z, y, x]
+                    if v == -2: row.append("█")        # buried/unexposed
+                    elif v == -1: row.append("?")        # exposed but unknown
+                    elif v == -3: row.append("*")        # revealed mine
+                    else: row.append(str(v))     # revealed number 0–26
                 out.append(" ".join(row))
 
-        # out = [f"{i} {o}" for i,o in enumerate(out)]
-        num_lines = self.depth+1 
-        out = [' | '.join(out[ind::num_lines]) for ind in range(num_lines)]
+        num_lines = self.depth + 1
+        combined = [" | ".join(out[start + i] for start in range(0, len(out), num_lines)) for i in range(num_lines)]
 
-        return "\n".join(out)
+        return "\n".join(combined)
     
     def render(self): 
+        """
+        Function that calls the corresponding render function. Currently only supports ANSI, but will in the future support 3D visualization using pyvista.
+        """
         if self.render_mode == "ansi": return self.render_ansi()
     
 if __name__ == "__main__": 
