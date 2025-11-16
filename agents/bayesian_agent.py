@@ -176,35 +176,74 @@ class Agent:
         return clusters
 
     # this helper computes posterior probabilities for a small group
-    def compute_local_posteriors(self, group, constraints):
-        """
-        Enumerate only this small group of tiles (<= 12 recommended).
-        """
+    # def compute_local_posteriors(self, group, constraints):
+    #     group = [tuple(g) for g in group]
+    #     n = len(group)
+
+    #     # INTERRUPT if cluster is too large
+    #     # otherwise combinatorial explosion
+    #     if n > 26:
+    #         print("Cluster too large, defaulting to 0.5 probabilities.")
+    #         return {c: 0.5 for c in group}
+
+    #     index = {c: i for i, c in enumerate(group)}
+    #     total_valid = 0
+    #     mine_count = {c: 0 for c in group}
+
+    #     for assign in product((0, 1), repeat=n):
+    #         if not self.check_constraints(assign, group, index, constraints):
+    #             continue
+
+    #         total_valid += 1
+    #         for c in group:
+    #             if assign[index[c]] == 1:
+    #                 mine_count[c] += 1
+
+    #     if total_valid == 0:
+    #         return {c: 0.5 for c in group}
+
+    #     return {c: mine_count[c] / total_valid for c in group}
+
+    # unlike above code, this block instead defaults to monte carlo sampling for
+    # large clusters rather than outright failing - previous implementation
+    # had issues with too many large clusters and would often return 0.5 for everything
+    def compute_local_posteriors(self, group, constraints, num_samples=1000):
         group = [tuple(g) for g in group]
         n = len(group)
-
-        # INTERRUPT if cluster is too large
-        # otherwise combinatorial explosion
-        if n > 12:
-            return {c: 0.5 for c in group}
-
         index = {c: i for i, c in enumerate(group)}
-        total_valid = 0
+
         mine_count = {c: 0 for c in group}
+        total_valid = 0
 
-        for assign in product((0, 1), repeat=n):
-            if not self.check_constraints(assign, group, index, constraints):
-                continue
-
-            total_valid += 1
-            for c in group:
-                if assign[index[c]] == 1:
-                    mine_count[c] += 1
+        if n <= 20:
+            # calculate
+            for assign in product((0, 1), repeat=n):
+                if not self.check_constraints(assign, group, index, constraints):
+                    continue
+                total_valid += 1
+                for c in group:
+                    if assign[index[c]] == 1:
+                        mine_count[c] += 1
+        else:
+            # otherwise monte carlo sample
+            attempts = 0
+            while total_valid < num_samples and attempts < num_samples * 10:
+                assign = np.random.randint(0, 2, size=n)
+                if not self.check_constraints(assign, group, index, constraints):
+                    attempts += 1
+                    continue
+                total_valid += 1
+                for c in group:
+                    if assign[index[c]] == 1:
+                        mine_count[c] += 1
+                attempts += 1
 
         if total_valid == 0:
+            # fallback if no valid assignments found
             return {c: 0.5 for c in group}
 
         return {c: mine_count[c] / total_valid for c in group}
+
 
     # this helper checks if a given assignment satisfies all constraints
     # the constraints are in the form of (cells, required_mines)
