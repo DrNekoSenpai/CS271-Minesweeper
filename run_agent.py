@@ -63,6 +63,10 @@ def main():
     done = False
     episode_reward = 0
 
+    good_moves = 0        # moves that revealed at least one safe tile
+    total_moves = 0       # total moves made
+    mine_hits = 0         # moves that hit a mine (should always be one - sanity check)
+
     while not done:
         if args.render == 'ansi': 
             print(env.render())
@@ -77,22 +81,40 @@ def main():
                 obs, info = env.reset()
                 episode_reward = 0.0
                 done = False
+                good_moves = 0
+                total_moves = 0
+                mine_hits = 0
                 continue
                     
         action = agent.select_action(obs)
         z, y, x = decode_action(action, env.height, env.width)
 
+        # ----- Step and evaluate move -----
         obs, reward, terminated, truncated, info = env.step(action)
         episode_reward += reward
+        total_moves += 1
+
+        # Good move = revealed at least one tile
+        if reward > 0:
+            good_moves += 1
+        # Hit a mine
+        elif reward < 0 and obs[z, y, x] == -10:
+            mine_hits += 1
 
         print(f"Agent clicked tile: (x={x}, y={y}, z={z})")
         print(f"Reward: {reward}")
-        print(f"Total: {episode_reward}")
+        print(f"Total reward: {episode_reward}")
+        print(f"Good moves so far: {good_moves}, Total moves: {total_moves}, Mine hits: {mine_hits}")
+        print("----")
 
         done = terminated or truncated
 
     print(env.render())
     print("----\nFINAL EPISODE REWARD:", episode_reward)
+    print(f"Total moves: {total_moves}")
+    print(f"Good moves: {good_moves}")
+    print(f"Mine hits: {mine_hits}")
+
 
 if __name__ == "__main__":
     main()
