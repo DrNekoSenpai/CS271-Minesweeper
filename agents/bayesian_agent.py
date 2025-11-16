@@ -31,6 +31,7 @@ class Agent:
 
         frontier = np.argwhere(obs == -1)
         if len(frontier) == 0:
+            print("no more moves")
             return self.action_space.sample()
 
         revealed = np.argwhere(obs >= 0)
@@ -39,6 +40,7 @@ class Agent:
         forced_safe, forced_mine = self.find_forced_moves(obs, revealed)
         if forced_safe:
             z, y, x = forced_safe[0]
+            print("taking forced safe move")
             return z * H * W + y * W + x
 
         # see helper below
@@ -46,6 +48,7 @@ class Agent:
 
         # without any constraints we choose the center-most tile
         if not constraints:
+            print("no constraints, guessing center")
             return self.pick_center_guess(frontier, D, H, W)
 
         # building clusters here for efficient calculation, see helper
@@ -60,6 +63,7 @@ class Agent:
         # IMMEDIATE EXIT - select the first P=0 tile found
         zero_prob = [c for c, p in post.items() if abs(p) < 1e-12]
         if zero_prob:
+            print("selecting guaranteed safe tile")
             z, y, x = zero_prob[0]
             return z * H * W + y * W + x
 
@@ -78,6 +82,7 @@ class Agent:
                 best = (z, y, x)
 
         z, y, x = best
+        print(f"selecting tile with prob {best_score[0]:.4f}")
         return z * H * W + y * W + x
 
     # the reason we need forced moves is that they can simplify the problem
@@ -243,7 +248,6 @@ class Agent:
             return {c: 0.5 for c in group}
 
         return {c: mine_count[c] / total_valid for c in group}
-
 
     # this helper checks if a given assignment satisfies all constraints
     # the constraints are in the form of (cells, required_mines)
