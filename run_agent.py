@@ -1,6 +1,15 @@
 import importlib, argparse, os 
 from backend.environment import MinesweeperEnv
 
+# -- todo --
+# i think this is the file where we need to implement the code
+# that takes care of iterations
+# i.e. runs an agent 1000 times and ensures it learns over time (RL agent - see load/save functions)
+# at the end of the x iterations, this code will also call matplotlib and other statistical functions to spit out a final report
+# should also be important to note that this code needs to gather metrics *as it goes*, so each iteration within an agent
+# needs to pass data back here for final processing at the end
+# maybe via dataframe is the easiest
+
 def load_agent(agent_name, action_space): 
     try: 
         module = importlib.import_module(f"agents.{agent_name}")

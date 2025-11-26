@@ -2,6 +2,9 @@ import numpy as np
 from collections import deque
 from itertools import product
 
+# -- todo --
+# none for now
+
 class Minesweeper:
     def __init__(self, height=5, width=5, depth=5, num_mines=10, seed=None): 
         self.height = height 

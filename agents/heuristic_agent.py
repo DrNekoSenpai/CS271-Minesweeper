@@ -1,6 +1,9 @@
 import numpy as np
 from itertools import product
 
+# -- todo --
+# adding metric stuff for run_agent.py
+
 class Agent:
     """
     this is just a simple heuristic agent for minesweeper

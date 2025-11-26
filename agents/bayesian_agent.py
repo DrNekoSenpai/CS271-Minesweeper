@@ -2,6 +2,11 @@ import numpy as np
 from itertools import product, combinations
 from collections import defaultdict, deque
 
+# -- todo --
+# jared: i had an idea for a second implementation
+# as of right now this code does not outperform the simple heuristic agent, so it's functionally useless in the grand scope
+# of our report unless we can properly explain how this shortcoming is a result of INFORMATION SPARCITY IN THE STATE SPACE AND NOT THE CODE ITSELF
+
 class Agent:
     """
     bayesian agent that uses constraint satisfaction and Bayesian inference
