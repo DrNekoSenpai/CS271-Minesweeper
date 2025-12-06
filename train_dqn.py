@@ -89,6 +89,9 @@ def main():
         with open("metrics.log", "w", encoding="utf-8") as file: 
             file.write("")
 
+        with open("loss.log", "w", encoding="utf-8") as file: 
+            file.write("")
+
     for step in range(start_step, args.steps):
         actions = agent.select_actions(obs)
 
@@ -138,6 +141,9 @@ def main():
                     
                 file.write(f"Saved checkpoint: {save_path}\n")
                 logs = []
+
+            with open('loss.log', 'a', encoding="utf-8") as file: 
+                file.write(f"[step={step}]: {stats['loss']:.6f}\n")
 
             # Remove old checkpoints
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
