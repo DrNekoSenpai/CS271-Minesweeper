@@ -12,7 +12,7 @@ from itertools import product
 class MinesweeperEnv(gym.Env): 
     metadata = {"render_modes": ["ansi", "3d"], "render-fps": 4}
 
-    def __init__(self, height=5, width=5, depth=5, num_mines=10, render_mode='3d'): 
+    def __init__(self, height=5, width=5, depth=5, num_mines=15, render_mode='3d'): 
         super().__init__()
 
         self.height = height 
@@ -23,7 +23,7 @@ class MinesweeperEnv(gym.Env):
 
         self.game = None 
 
-        self.observation_space = spaces.Box(low=-10, high=26, shape=(self.height, self.depth, self.width), dtype=np.int32)
+        self.observation_space = spaces.Box(low=-10, high=26, shape=(self.height, self.width, self.depth), dtype=np.int32)
         self.action_space = spaces.Discrete(self.height * self.width * self.depth)
 
         # PyVista-related
@@ -51,13 +51,14 @@ class MinesweeperEnv(gym.Env):
         legal = np.flatnonzero(mask)
 
         info = {}
+        safe_move = 0 
 
         # Rebound if illegal
         if action < 0 or action >= self.action_space.n or not mask[action]:
             if legal.size == 0:
                 # No legal actions available (rare edge case)
                 # Just return state unchanged with neutral reward
-                return obs, 0.0, False, False, {"no_legal_actions": True}
+                return obs, 0.0, False, False, {"no_legal_actions": True, "safe_move": 0, "safe_tiles": 0}
 
             rebound_action = int(np.random.choice(legal))
             info["illegal_action"] = int(action)
@@ -79,11 +80,23 @@ class MinesweeperEnv(gym.Env):
             terminated = True
             truncated = False
             reward = 100.0 if self.game.win else -100.0
+            safe_move = 1 if self.game.win else 0
+            new_visible = np.sum(self.game.visible >= 0)
+            safe_tiles = max(new_visible - prev_visible, 0)
+
+            info["safe_move"] = safe_move
+            info["safe_tiles"] = safe_tiles
+
             return obs, reward, terminated, truncated, info
 
         # Reward for progress
         new_visible = np.sum(self.game.visible >= 0)
         reward = float(new_visible - prev_visible)
+        safe_tiles = max(new_visible - prev_visible, 0)
+        safe_move = 1
+
+        info["safe_move"] = safe_move
+        info["safe_tiles"] = safe_tiles
 
         return obs, reward, False, False, info
 

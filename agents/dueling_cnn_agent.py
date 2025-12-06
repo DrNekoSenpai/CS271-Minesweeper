@@ -162,7 +162,7 @@ class DuelingDCNNAgent:
         target_update: int = 1_000,
         eps_start: float = 1.0,
         eps_end: float = 0.05,
-        eps_decay_steps: int = 200_000,
+        eps_decay_steps: int = 400_000,
         grad_clip: float = 1.0,
         device: Optional[str] = None,
     ):
@@ -377,18 +377,66 @@ class DuelingDCNNAgent:
 
         return {"loss": float(loss.item())}
 
-    def save(self, path: str):
-        torch.save({
-            "online": self.online.state_dict(),
-            "target": self.target.state_dict(),
-            "optim": self.optim.state_dict(),
-            "steps": self.total_steps,
-            "H": self.H, "W": self.W, "D": self.D,
-        }, path)
+    def save_checkpoint(self, path: str, step: int) -> None:
+        """
+        Save training state so we can resume later.
 
-    def load(self, path: str):
-        ckpt = torch.load(path, map_location=self.device)
-        self.online.load_state_dict(ckpt["online"])
-        self.target.load_state_dict(ckpt["target"])
-        self.optim.load_state_dict(ckpt["optim"])
-        self.total_steps = ckpt.get("steps", 0)
+        Args:
+            path: filesystem path to save to (e.g. 'checkpoint_step_50000.pth')
+            step: current global training step in the outer loop
+        """
+        checkpoint = {
+            "step": step,
+            "total_steps": self.total_steps,
+            "online_state": self.online.state_dict(),
+            "target_state": self.target.state_dict(),
+            "optimizer_state": self.optim.state_dict(),
+            # Hyperparameters (optional but nice for safety / auditing)
+            "H": self.H,
+            "W": self.W,
+            "D": self.D,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "warmup": self.warmup,
+            "target_update": self.target_update,
+            "eps_start": self.eps_start,
+            "eps_end": self.eps_end,
+            "eps_decay_steps": self.eps_decay_steps,
+        }
+
+        # If you ever want to also save the replay buffer, you can do:
+        # checkpoint["replay_buffer"] = list(self.buffer.buffer)
+
+        torch.save(checkpoint, path)
+
+
+    def load_checkpoint(self, path: str) -> int:
+        """
+        Load training state from a checkpoint.
+
+        Returns:
+            step (int): the global training step to resume from
+                        (use this to set your training loop start).
+        """
+        checkpoint = torch.load(path, map_location=self.device)
+
+        self.online.load_state_dict(checkpoint["online_state"])
+        self.target.load_state_dict(checkpoint["target_state"])
+        self.optim.load_state_dict(checkpoint["optimizer_state"])
+
+        # Restore step counters so epsilon schedule & target updates line up
+        self.total_steps = checkpoint.get("total_steps", 0)
+        step = checkpoint.get("step", self.total_steps)
+
+        # If you chose to save replay buffer:
+        # if "replay_buffer" in checkpoint:
+        #     from collections import deque
+        #     self.buffer.buffer = deque(
+        #         checkpoint["replay_buffer"],
+        #         maxlen=self.buffer.buffer.maxlen
+        #     )
+
+        # Make sure target is in eval mode (just to be explicit)
+        self.target.eval()
+
+        return step

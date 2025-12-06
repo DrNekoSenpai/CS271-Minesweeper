@@ -6,7 +6,7 @@ from itertools import product
 # none for now
 
 class Minesweeper:
-    def __init__(self, height=5, width=5, depth=5, num_mines=10, seed=None): 
+    def __init__(self, height=5, width=5, depth=5, num_mines=15, seed=None): 
         self.height = height 
         self.width = width 
         self.depth = depth 
