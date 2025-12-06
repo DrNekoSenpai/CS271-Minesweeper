@@ -34,7 +34,7 @@ def list_agents():
 def decode_action(action, height, width):
     z, rem = divmod(action, height * width)
     y, x = divmod(rem, width)
-    return z, y, x
+    return x, y, z
 
 def main():
     # ----- Parse arguments -----
@@ -96,7 +96,7 @@ def main():
                 continue
                     
         action = agent.select_action(obs)
-        z, y, x = decode_action(action, env.height, env.width)
+        x, y, z = decode_action(action, env.height, env.width)
 
         # ----- Step and evaluate move -----
         obs, reward, terminated, truncated, info = env.step(action)
@@ -107,7 +107,7 @@ def main():
         if reward > 0:
             good_moves += 1
         # Hit a mine
-        elif reward < 0 and obs[z, y, x] == -10:
+        elif reward < 0 and obs[x, y, z] == -10:
             mine_hits += 1
 
         print(f"Agent clicked tile: (x={x}, y={y}, z={z})")

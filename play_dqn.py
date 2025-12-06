@@ -70,7 +70,7 @@ def play(model_path: str, episodes: int = 10, render: bool = True, env_kwargs: d
                 print(env.render())
 
             action = agent.select_action(obs)
-            z, y, x = _decode_action(action, env.height, env.width)
+            x, y, z = _decode_action(action, env.height, env.width)
 
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -79,7 +79,7 @@ def play(model_path: str, episodes: int = 10, render: bool = True, env_kwargs: d
             if reward > 0:
                 good_moves += 1
             # Mine hit detection: environment encodes revealed mine as -10 at the revealed cell
-            elif reward < 0 and next_obs[z, y, x] == -10:
+            elif reward < 0 and next_obs[x, y, z] == -10:
                 mine_hits += 1
 
             obs = next_obs

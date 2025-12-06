@@ -33,7 +33,7 @@ class MinesweeperEnv(gym.Env):
     def _decode_action(self, action): 
         z, rem = divmod(action, self.height * self.width)
         y, x = divmod(rem, self.width)
-        return y, x, z
+        return x, y, z
         
     def reset(self, seed=None, options=None): 
         super().reset(seed=seed)
@@ -66,12 +66,12 @@ class MinesweeperEnv(gym.Env):
             action = rebound_action
 
         # Decode using consistent convention
-        y, x, z = self._decode_action(action)
+        x, y, z = self._decode_action(action)
 
         prev_visible = np.sum(self.game.visible >= 0)
 
         # Perform reveal
-        self.game.reveal(y, x, z)
+        self.game.reveal(x, y, z)
         self.game.update_surface_mask()
         obs = self.game.get_observation()
 
@@ -111,7 +111,7 @@ class MinesweeperEnv(gym.Env):
         H, W, D = obs.shape
         mask = np.zeros(H * W * D, dtype=bool)
 
-        coords = np.argwhere(obs == -1)  # (y, x, z)
+        coords = np.argwhere(obs == -1)  # (x, y, z)
         if coords.size == 0:
             return mask
 
@@ -132,7 +132,7 @@ class MinesweeperEnv(gym.Env):
             for y in range(self.height):
                 row = []
                 for x in range(self.width):
-                    v = obs[y, x, z]
+                    v = obs[x, y, z]
                     if v == -2:
                         row.append("█")
                     elif v == -1:
@@ -169,7 +169,7 @@ class MinesweeperEnv(gym.Env):
         mine_points = []
 
         for x, y, z in product(range(self.height), range(self.width), range(self.depth)): 
-            v = obs[y, x, z] 
+            v = obs[x, y, z] 
 
             wx = x * cube_size 
             wy = y * cube_size 

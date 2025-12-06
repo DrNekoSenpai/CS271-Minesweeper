@@ -44,7 +44,7 @@ class Agent:
         # see helper below
         forced_safe, forced_mine = self.find_forced_moves(obs, revealed)
         if forced_safe:
-            z, y, x = forced_safe[0]
+            x, y, z = forced_safe[0]
             print("taking forced safe move")
             return z * H * W + y * W + x
 
@@ -69,7 +69,7 @@ class Agent:
         zero_prob = [c for c, p in post.items() if abs(p) < 1e-12]
         if zero_prob:
             print("selecting guaranteed safe tile")
-            z, y, x = zero_prob[0]
+            x, y, z = zero_prob[0]
             return z * H * W + y * W + x
 
         # otherwise pick lowest probability ties
@@ -78,15 +78,15 @@ class Agent:
         best = None
         best_score = (float("inf"), float("inf"))
 
-        for (z, y, x) in post:
-            p = post[(z, y, x)]
+        for (x, y, z) in post:
+            p = post[(x, y, z)]
             dist = ((z - (D/2))**2 + (y - (H/2))**2 + (x - (W/2))**2)
             score = (p, dist)
             if score < best_score:
                 best_score = score
-                best = (z, y, x)
+                best = (x, y, z)
 
-        z, y, x = best
+        x, y, z = best
         print(f"selecting tile with prob {best_score[0]:.4f}")
         return z * H * W + y * W + x
 
@@ -99,9 +99,9 @@ class Agent:
         forced_safe = []
         forced_mine = []
 
-        for (z, y, x) in revealed:
-            val = obs[z, y, x]
-            neigh = self.get_neighbors(z, y, x, obs)
+        for (x, y, z) in revealed:
+            val = obs[x, y, z]
+            neigh = self.get_neighbors(x, y, z, obs)
 
             unrevealed = [(nz, ny, nx) for (nz, ny, nx) in neigh if obs[nz, ny, nx] == -1]
             if not unrevealed:
@@ -126,9 +126,9 @@ class Agent:
     # this helper builds constraints from revealed tiles
     def build_constraints(self, obs, revealed):
         constraints = []
-        for (z, y, x) in revealed:
-            val = obs[z, y, x]
-            neigh = self.get_neighbors(z, y, x, obs)
+        for (x, y, z) in revealed:
+            val = obs[x, y, z]
+            neigh = self.get_neighbors(x, y, z, obs)
             frontier_cells = [(nz, ny, nx) for (nz, ny, nx) in neigh if obs[nz, ny, nx] == -1]
             if frontier_cells:
                 constraints.append((tuple(frontier_cells), val))
@@ -270,16 +270,16 @@ class Agent:
     def pick_center_guess(self, frontier, D, H, W):
         best = None
         best_dist = float("inf")
-        for (z, y, x) in frontier:
+        for (x, y, z) in frontier:
             dist = ( (z - (D/2))**2 + (y - (H/2))**2 + (x - (W/2))**2 )
             if dist < best_dist:
                 best_dist = dist
-                best = (z, y, x)
-        z, y, x = best
+                best = (x, y, z)
+        x, y, z = best
         return z * H * W + y * W + x
 
     # this helper gets all valid neighbors of a cell
-    def get_neighbors(self, z, y, x, obs):
+    def get_neighbors(self, x, y, z, obs):
         D, H, W = obs.shape
         res = []
         for dz, dy, dx in product((-1, 0, 1), repeat=3):

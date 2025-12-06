@@ -143,7 +143,7 @@ class DuelingDCNNAgent:
 
     Observation convention:
         obs shape = (H, W, D)
-        Legal actions are tiles where obs[y, x, z] == -1 (exposed & unrevealed).
+        Legal actions are tiles where obs[x, y, z] == -1 (exposed & unrevealed).
 
     Flattened action index convention:
         index = z * H * W + y * W + x
