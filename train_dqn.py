@@ -46,6 +46,7 @@ def main():
     )
 
     episode_rewards = np.zeros(args.num_envs, dtype=np.float32)
+    recent_rewards = []
     completed = 0
 
     for step in range(args.steps):
@@ -61,8 +62,9 @@ def main():
 
             if done[i]:
                 completed += 1
-                if completed % 50 == 0:
-                    print(f"[episodes={completed}] recent_reward={episode_rewards[i]:.1f}")
+                if completed % 50 == 0: 
+                    recent_rewards.append(np.round(episode_rewards[i], 1))
+                    print(f"[step={step}] loss = ------ recent_reward = {np.round(episode_rewards[i], 1)}")
                 episode_rewards[i] = 0.0
 
         obs = next_obs
@@ -70,11 +72,12 @@ def main():
         # Train
         stats = agent.optimize()
         if stats and step % 500 == 0:
-            print(f"[step={step}] loss={stats['loss']:.4f}")
+            avg_reward = np.mean(recent_rewards)
+            print(f"[step={step}] loss = {stats['loss']:.4f} avg_reward = {avg_reward:.1f}")
+            recent_rewards = []
 
     agent.save("dueling_dcnn_3d.pt")
     print("Saved model to dueling_dcnn_3d.pt")
-
 
 if __name__ == "__main__":
     main()
