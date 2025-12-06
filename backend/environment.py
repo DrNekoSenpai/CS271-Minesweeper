@@ -33,7 +33,7 @@ class MinesweeperEnv(gym.Env):
     def _decode_action(self, action): 
         z, rem = divmod(action, self.height * self.width)
         y, x = divmod(rem, self.width)
-        return z, y, x
+        return y, x, z
         
     def reset(self, seed=None, options=None): 
         super().reset(seed=seed)
@@ -44,74 +44,94 @@ class MinesweeperEnv(gym.Env):
 
         return obs, info 
     
-    def step(self, action): 
-        x, y, z = self._decode_action(action)
+    def step(self, action):
+        # Get current obs and legal mask
+        obs = self.game.get_observation()
+        mask = self.get_action_mask(obs)
+        legal = np.flatnonzero(mask)
+
+        info = {}
+
+        # Rebound if illegal
+        if action < 0 or action >= self.action_space.n or not mask[action]:
+            if legal.size == 0:
+                # No legal actions available (rare edge case)
+                # Just return state unchanged with neutral reward
+                return obs, 0.0, False, False, {"no_legal_actions": True}
+
+            rebound_action = int(np.random.choice(legal))
+            info["illegal_action"] = int(action)
+            info["rebound_action"] = rebound_action
+            action = rebound_action
+
+        # Decode using consistent convention
+        y, x, z = self._decode_action(action)
+
         prev_visible = np.sum(self.game.visible >= 0)
 
-        if self.game.visible[x, y, z] == -2: 
-            reward = -5.0
-            terminated = False 
-            truncated = False 
-            obs = self.game.get_observation()
-            return obs, reward, terminated, truncated, {} 
-        
-        if self.game.visible[x, y, z] >= 0:
-            reward = -1.0
-            terminated = False
-            truncated = False
-            obs = self.game.get_observation()
-            return obs, reward, terminated, truncated, {}
-        
         # Perform reveal
-        self.game.reveal(x, y, z)
+        self.game.reveal(y, x, z)
         self.game.update_surface_mask()
         obs = self.game.get_observation()
 
-        # Game over handling
+        # Terminal handling
         if self.game.game_over:
             terminated = True
             truncated = False
+            reward = 100.0 if self.game.win else -100.0
+            return obs, reward, terminated, truncated, info
 
-            if self.game.win: reward = 100.0
-            else: reward = -100.0
-
-            return obs, reward, terminated, truncated, {}
-
-        # Reward for progress: count newly revealed tiles
+        # Reward for progress
         new_visible = np.sum(self.game.visible >= 0)
         reward = float(new_visible - prev_visible)
 
-        return obs, reward, False, False, {}
-    
+        return obs, reward, False, False, info
+
+    def get_action_mask(self, obs=None):
+        """
+        Returns a boolean mask of size H*W*D.
+        True = legal action (exposed & unrevealed).
+        """
+        if obs is None:
+            obs = self.game.get_observation()
+
+        H, W, D = obs.shape
+        mask = np.zeros(H * W * D, dtype=bool)
+
+        coords = np.argwhere(obs == -1)  # (y, x, z)
+        if coords.size == 0:
+            return mask
+
+        y = coords[:, 0]
+        x = coords[:, 1]
+        z = coords[:, 2]
+
+        idx = z * (H * W) + y * W + x
+        mask[idx] = True
+        return mask
+
     def _render_ansi(self):
-        """
-        Text-based 3D visualization of the board.
-        Dimensions follow the convention:
-            x = width
-            y = height
-            z = depth (layers)
-        The observation obs[z, y, x] is printed one z-layer at a time.
-        """
-        obs = self.game.get_observation()
+        obs = self.game.get_observation()  # (H, W, D)
         out = []
 
-        # Build each z-layer view
         for z in range(self.depth):
             out.append(f"Layer z={z}")
             for y in range(self.height):
                 row = []
                 for x in range(self.width):
-                    v = obs[z, y, x]
-                    if v == -2: row.append("█")   # buried/unexposed
-                    elif v == -1: row.append("?") # exposed but unknown
-                    elif v == -10: row.append("*") # revealed mine
-                    else: row.append(str(v))      # revealed number 0–26
+                    v = obs[y, x, z]
+                    if v == -2:
+                        row.append("█")
+                    elif v == -1:
+                        row.append("?")
+                    elif v == -10:
+                        row.append("*")
+                    else:
+                        row.append(str(v))
                 out.append(" ".join(row))
+            out.append("")
 
-        num_lines = self.depth + 1
-        combined = [" | ".join(out[start + i] for start in range(0, len(out), num_lines)) for i in range(num_lines)]
-
-        return "\n".join(combined)
+        return "\n".join(out)
     
     def _render_pyvista(self): 
         import pyvista as pv
