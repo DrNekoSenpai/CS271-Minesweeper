@@ -52,9 +52,10 @@ def main():
     completed = 0
 
     checkpoint_path = "dqn-checkpoint"
-    load_path = next((f for f in os.listdir(".") if checkpoint_path in f), None)
+    checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
+    load_path = checkpoints[-1] if checkpoints else "dqn-checkpoint-0.pth"
 
-    save_every = 2500
+    save_every = 5000
     start_step = 0
     logs = []
 
