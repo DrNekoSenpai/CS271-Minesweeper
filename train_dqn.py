@@ -43,7 +43,8 @@ def main():
         batch_size=args.batch_size,
         warmup=10000,
         target_update=2000, 
-        buffer_size=500000
+        buffer_size=500000, 
+        eps_decay_steps=200000
     )
 
     episode_rewards = np.zeros(args.num_envs, dtype=np.float32)
@@ -155,7 +156,8 @@ def main():
             plt.ylabel("Average Reward")
             plt.title("Reward Curve")
             plt.grid(True)
-            plt.savefig(f"rewards-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/rewards-{step}.png", dpi=600)
+            plt.close()
             print(f"Saved reward curve to rewards-{step}.png")
 
             plt.figure(figsize=(10, 6))
@@ -166,7 +168,8 @@ def main():
             plt.ylabel("Average Safe Moves")
             plt.title("Safe Moves")
             plt.grid(True)
-            plt.savefig(f"safe_moves-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/safe_moves-{step}.png", dpi=600)
+            plt.close()
             print(f"Saved reward curve to safe_moves-{step}.png")
 
             plt.figure(figsize=(10, 6))
@@ -177,16 +180,17 @@ def main():
             plt.ylabel("Safe Tiles")
             plt.title("Safe Tiles")
             plt.grid(True)
-            plt.savefig(f"safe_tiles-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/safe_tiles-{step}.png", dpi=600)
+            plt.close()
             print(f"Saved reward curve to safe_tiles-{step}.png")
 
             pattern = re.compile(r"(rewards|safe_moves|safe_tiles)-(\d+)\.png")
-            for fname in os.listdir("."): 
+            for fname in os.listdir("./metrics/"): 
                 match = pattern.match(fname)
                 if not match: continue 
 
                 file_step = int(match.group(2))
-                if file_step < step: os.remove(fname)
+                if file_step < step: os.remove(f"./metrics/{fname}")
 
             # pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
             # for fname in os.listdir("."): 
