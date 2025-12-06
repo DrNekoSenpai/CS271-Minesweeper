@@ -4,10 +4,10 @@ import gymnasium as gym
 import os
 import matplotlib.pyplot as plt 
 import re 
-import pickle
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
+from matplotlib.ticker import MaxNLocator
 
 def make_env(depth, height, width, num_mines):
     def _thunk():
@@ -52,21 +52,36 @@ def main():
     completed = 0
 
     checkpoint_path = "dqn-checkpoint"
-    pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
-    candidates = []
-    for fname in os.listdir("."):
-        m = pattern.match(fname)
-        if m:
-            candidates.append((int(m.group(1)), fname))
+    load_path = next((f for f in os.listdir(".") if checkpoint_path in f), None)
 
-    load_path = candidates[-1][1] if candidates else f"{checkpoint_path}-0.pth"
     save_every = 2500
     start_step = 0
-    metrics = []
+    logs = []
+
+    metrics = {
+        "steps": [], 
+        "reward": [], 
+        "safe_moves": [], 
+        "safe_tiles": []
+    }
 
     if not args.fresh and os.path.exists(load_path): 
         start_step = agent.load_checkpoint(load_path)
         print(f"Loaded checkpoint {load_path} from step {start_step}")
+
+        with open("metrics.log", "r", encoding="utf-8") as file: 
+            lines = file.readlines() 
+        
+        # [step=98685] reward=-99.0 safe_moves=1.0 safe_tiles=1.0
+        metrics_pattern = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
+        for line in lines: 
+            match = re.search(metrics_pattern, line)
+            if match: 
+                steps, reward, safe_moves, safe_tiles = match.groups()
+                metrics["steps"].append(int(steps))
+                metrics["reward"].append(float(reward))
+                metrics["safe_moves"].append(float(safe_moves))
+                metrics["safe_tiles"].append(float(safe_tiles))
 
     else: 
         with open("metrics.log", "w", encoding="utf-8") as file: 
@@ -93,7 +108,7 @@ def main():
                 completed += 1
                 if completed % 100 == 0: 
                     print(f"[step={step}] reward={np.mean(episode_rewards[i]):.1f} safe_moves={np.mean(episode_safe_moves[i]):.1f} safe_tiles={np.mean(episode_safe_tiles[i]):.1f}")
-                    metrics.append(f"[step={step}] reward={np.mean(episode_rewards[i]):.1f} safe_moves={np.mean(episode_safe_moves[i]):.1f} safe_tiles={np.mean(episode_safe_tiles[i]):.1f}")
+                    logs.append((step, np.mean(episode_rewards[i]), np.mean(episode_safe_moves[i]), np.mean(episode_safe_tiles[i])))
 
                 episode_rewards[i] = 0.0
                 episode_safe_moves[i] = 0.0
@@ -110,14 +125,20 @@ def main():
 
             print(f"Saved checkpoint: {save_path}")
             with open('metrics.log', 'a', encoding='utf-8') as file: 
-                for m in metrics: 
-                    file.write(f"{m}\n")
+                for l in logs: 
+                    s, reward, safe_moves, safe_tiles = l
+                    file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
+
+                    metrics["steps"].append(s)
+                    metrics["reward"].append(reward)
+                    metrics["safe_moves"].append(safe_moves)
+                    metrics["safe_tiles"].append(safe_tiles)
+                    
                 file.write(f"Saved checkpoint: {save_path}\n")
-                metrics = []
+                logs = []
 
+            # Remove old checkpoints
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
-
-            # Delete all other checkpoints in directory that are not the most recent
             for fname in os.listdir("."): 
                 match = pattern.match(fname)
                 if not match: continue 
@@ -125,19 +146,57 @@ def main():
                 file_step = int(match.group(1))
                 if file_step < step: os.remove(fname)
 
+            plt.figure(figsize=(10, 6))
+            plt.plot(metrics["steps"], metrics["reward"], label="Rewards", linestyle="-")
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+            plt.xlabel("Step")
+            plt.ylabel("Average Reward")
+            plt.title("Reward Curve")
+            plt.grid(True)
+            plt.savefig(f"rewards-{step}.png", dpi=600)
+            print(f"Saved reward curve to rewards-{step}.png")
+
+            plt.figure(figsize=(10, 6))
+            plt.plot(metrics["steps"], metrics["safe_moves"], label="Safe Moves", linestyle="-")
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+            plt.xlabel("Step")
+            plt.ylabel("Average Safe Moves")
+            plt.title("Safe Moves")
+            plt.grid(True)
+            plt.savefig(f"safe_moves-{step}.png", dpi=600)
+            print(f"Saved reward curve to safe_moves-{step}.png")
+
+            plt.figure(figsize=(10, 6))
+            plt.plot(metrics["steps"], metrics["safe_tiles"], label="Safe Tiles", linestyle="-")
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+            plt.xlabel("Step")
+            plt.ylabel("Safe Tiles")
+            plt.title("Safe Tiles")
+            plt.grid(True)
+            plt.savefig(f"safe_tiles-{step}.png", dpi=600)
+            print(f"Saved reward curve to safe_tiles-{step}.png")
+
+            pattern = re.compile(r"(rewards|safe_moves|safe_tiles)-(\d+)\.png")
+            for fname in os.listdir("."): 
+                match = pattern.match(fname)
+                if not match: continue 
+
+                file_step = int(match.group(2))
+                if file_step < step: os.remove(fname)
+
+            # pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
+            # for fname in os.listdir("."): 
+            #     match = pattern.match(fname)
+            #     if not match: continue 
+
+            #     file_step = int(match.group(1))
+            #     if file_step < step: os.remove(fname)
+
     agent.save(f"dueling_cnn.pt")
     print(f"Saved model to dueling_cnn.pt")
-
-    # plt.figure(figsize=(10,6))
-
-    # plt.xlabel("Log Step (index x 50)")
-    # plt.ylabel("Average Reward")
-    # plt.title("Training Reward Curve")
-    # plt.grid(True)
-    # plt.legend()
-
-    # plt.savefig("train_results.png", dpi=600)
-    # print("Saved reward curve to train_results.png")
 
 if __name__ == "__main__":
     main()
