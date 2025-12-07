@@ -10,16 +10,12 @@ class Agent:
         self.action_space = action_space
 
     def select_action(self, obs):
-        # obs shape: (D,H,W)
         exposed = np.argwhere(obs == -1)
         if len(exposed) == 0:
-            # no legal actions → fallback random
             return self.action_space.sample()
 
-        # pick exposed tile
         z, r, c = exposed[np.random.randint(len(exposed))]
 
-        # encode (z,r,c) into flat index
-        D, H, W = obs.shape
-        index = z * H * W + r * W + c
+        H, W, D = obs.shape
+        index = z * (H * W) + r * W + c
         return index
