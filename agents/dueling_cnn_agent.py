@@ -201,13 +201,14 @@ class DuelingDCNNAgent:
         obs: (H,W,D)
         returns flat indices of legal actions where obs == -1
         """
-        coords = np.argwhere(obs == -1)  # (y,x,z)
+        coords = np.argwhere(obs == -1)  # axis order: (x, y, z)
         if coords.size == 0:
             return np.array([], dtype=np.int64)
 
-        y = coords[:, 0]
-        x = coords[:, 1]
+        x = coords[:, 0]
+        y = coords[:, 1]
         z = coords[:, 2]
+
         idx = z * (self.H * self.W) + y * self.W + x
         return idx.astype(np.int64)
 

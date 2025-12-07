@@ -91,9 +91,13 @@ class MinesweeperEnv(gym.Env):
 
         # Reward for progress
         new_visible = np.sum(self.game.visible >= 0)
-        reward = float(new_visible - prev_visible)
-        safe_tiles = max(new_visible - prev_visible, 0)
-        safe_move = 1
+        delta = int(new_visible - prev_visible)
+
+        reward = float(delta)
+        safe_tiles = max(delta, 0)
+
+        # "Good move" semantics: only count if we actually revealed something new
+        safe_move = 1 if safe_tiles > 0 else 0
 
         info["safe_move"] = safe_move
         info["safe_tiles"] = safe_tiles
@@ -111,12 +115,12 @@ class MinesweeperEnv(gym.Env):
         H, W, D = obs.shape
         mask = np.zeros(H * W * D, dtype=bool)
 
-        coords = np.argwhere(obs == -1)  # (x, y, z)
+        coords = np.argwhere(obs == -1)  # axis order matches obs: (x, y, z)
         if coords.size == 0:
             return mask
 
-        y = coords[:, 0]
-        x = coords[:, 1]
+        x = coords[:, 0]
+        y = coords[:, 1]
         z = coords[:, 2]
 
         idx = z * (H * W) + y * W + x

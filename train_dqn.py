@@ -133,6 +133,7 @@ def main():
                 for l in logs: 
                     s, reward, safe_moves, safe_tiles = l
                     file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
+                    if safe_moves > safe_tiles: print("Warning: moves greater than tiles revealed")
 
                     metrics["steps"].append(s)
                     metrics["reward"].append(reward)

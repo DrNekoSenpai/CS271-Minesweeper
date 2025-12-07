@@ -35,8 +35,7 @@ class Minesweeper:
         mine_positions = self.rng.choice(self.depth * self.height * self.width, self.num_mines, replace=False)
 
         for mine in mine_positions: 
-            x, y, z = divmod(mine, self.height * self.width)[0], *divmod(divmod(mine, self.height * self.width)[1], self.width)
-
+            x, y, z = np.unravel_index(mine, (self.height, self.width, self.depth))
             # -1 is mine
             self.board[x, y, z] = -1
 
@@ -71,7 +70,7 @@ class Minesweeper:
         self._flood_reveal(x, y, z)
         self.update_surface_mask()
 
-        if np.sum(self.visible != -1) == (self.width * self.height * self.depth - self.num_mines): 
+        if np.sum(self.visible >= 0) == (self.width * self.height * self.depth - self.num_mines): 
             self.game_over = True 
             self.win = True 
 
@@ -92,7 +91,7 @@ class Minesweeper:
             if self.board[dqx, dqy, dqz] == 0: 
                 directions = [(dx, dy, dz) for dx, dy, dz in product((-1, 0, 1), repeat=3) if not (dx == dy == dz == 0)]
                 for dx, dy, dz in directions: 
-                    nx = x + dx; ny = y + dy; nz = z + dz 
+                    nx = dqx + dx; ny = dqy + dy; nz = dqz + dz
                     if 0 <= nx < self.height and 0 <= ny < self.width and 0 <= nz < self.depth: 
                         if self.visible[nx, ny, nz] == -1: 
                             queue.append((nx, ny, nz))
