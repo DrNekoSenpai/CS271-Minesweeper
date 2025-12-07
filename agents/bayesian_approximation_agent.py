@@ -10,7 +10,7 @@ MINES = 15
 
 class Agent:
     """
-    Heuristic Minesweeper agent:
+    Bayesian Approximation Minesweeper agent:
     - Picks neighbors of revealed 0s first
     - Otherwise estimates mine probabilities and picks safest tile
     - Estimates probabilities based on adjacent revealed numbers
@@ -34,7 +34,7 @@ class Agent:
                 if 0 <= nx < H and 0 <= ny < W and 0 <= nz < D:
                     if obs[nx, ny, nz] == -1:
                         action = nz * (H * W) + ny * W + nx
-                        print("Picking safe:", (nx, ny, nz))
+                        # print("Picking safe:", (nx, ny, nz))
                         return action
 
         # base probability
@@ -75,6 +75,6 @@ class Agent:
 
         best_tile = min(probabilities, key=probabilities.get)
         x, y, z = best_tile
-        print("Picking probabilistic:", best_tile, "p =", probabilities[best_tile])
+        # print("Picking probabilistic:", best_tile, "p =", probabilities[best_tile])
 
         return z * (H * W) + y * W + x

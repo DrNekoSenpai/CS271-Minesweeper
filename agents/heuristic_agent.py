@@ -24,13 +24,13 @@ class Agent:
                 nx, ny, nz = zx + dx, zy + dy, zz + dz
                 if 0 <= nx < H and 0 <= ny < W and 0 <= nz < D:
                     if obs[nx, ny, nz] == -1:
-                        print("Picking safe:", (nx, ny, nz))
+                        # print("Picking safe:", (nx, ny, nz))
                         action = nz * (H * W) + ny * W + nx
                         return action
 
         if len(frontier) > 0:
             x, y, z = random.choice(frontier)
-            print("Picking random:", (x, y, z))
+            # print("Picking random:", (x, y, z))
             return z * (H * W) + y * W + x
 
         return self.action_space.sample()
