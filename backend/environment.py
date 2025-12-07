@@ -115,7 +115,7 @@ class MinesweeperEnv(gym.Env):
         H, W, D = obs.shape
         mask = np.zeros(H * W * D, dtype=bool)
 
-        coords = np.argwhere(obs == -1)  # axis order matches obs: (x, y, z)
+        coords = np.argwhere(obs == -1)
         if coords.size == 0:
             return mask
 

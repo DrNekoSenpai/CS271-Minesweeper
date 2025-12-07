@@ -70,9 +70,12 @@ class Minesweeper:
         self._flood_reveal(x, y, z)
         self.update_surface_mask()
 
-        if np.sum(self.visible >= 0) == (self.width * self.height * self.depth - self.num_mines): 
-            self.game_over = True 
-            self.win = True 
+        revealed_safe = np.sum(self.visible >= 0)
+        total_safe = self.width * self.height * self.depth - self.num_mines
+
+        if revealed_safe == total_safe:
+            self.game_over = True
+            self.win = True
 
     def _flood_reveal(self, x, y, z): 
         """

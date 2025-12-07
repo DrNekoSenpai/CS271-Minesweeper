@@ -18,7 +18,6 @@ def load_agent(agent_name, action_space):
     except (ModuleNotFoundError, AttributeError):
         raise ValueError(f"Agent '{agent_name}' not found in agents/")
 
-
 def run_episode(env, agent):
     obs, _ = env.reset()
     done = False
@@ -55,7 +54,6 @@ def summarize(values, name):
     print(f"  mean    = {values.mean():.2f}")
     print(f"  median  = {np.median(values):.2f}")
     print(f"  var     = {values.var():.2f}")
-
 
 def main():
     env = MinesweeperEnv(

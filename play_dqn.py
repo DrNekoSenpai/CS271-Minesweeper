@@ -1,135 +1,207 @@
-"""Play a trained dueling DQN agent against the Minesweeper environment.
+"""
+Batch-evaluate a trained Dueling Double-DQN 3D CNN Minesweeper agent.
 
-This script loads a checkpoint saved by `agents.dueling_cnn_agent.Agent.save`
-and runs episodes using `Agent.select_action`. It's intended for evaluation /
-visual play. The checkpoint should contain the `policy` state dict.
+This rewrite intentionally matches the output/print structure of
+run_agent_batch.py:
+  - progress update every 100 episodes
+  - summary blocks with min/max/mean/median/var
+  - Win / Loss counts and win rate
+
+The loader supports:
+  1) Training checkpoints saved via DuelingDCNNAgent.save_checkpoint
+     (expects key: "online_state")
+  2) A raw state_dict (if you later save inference-only weights)
 
 Usage:
-  python play_dqn.py --model ./dueling_agent.pth --episodes 10 --render
+  python play_dqn.py --model checkpoint_step_50000.pth --episodes 1000
+  python play_dqn.py --model dueling_cnn.pt --episodes 200 --render
 """
 
 import argparse
 import os
-import time
-
 import numpy as np
+import torch
 
 from backend.environment import MinesweeperEnv
-from agents.dueling_cnn_agent import Agent
+from agents.dueling_cnn_agent import DuelingDCNNAgent
 
 
-def _decode_action(action: int, height: int, width: int):
-    # same decoding convention used elsewhere in the repo
-    z, rem = divmod(action, height * width)
-    y, x = divmod(rem, width)
-    return int(z), int(y), int(x)
+def summarize(values, name):
+    values = np.array(values, dtype=np.float32)
+    print(f"\n{name}:")
+    print(f"  min     = {values.min():.2f}")
+    print(f"  max     = {values.max():.2f}")
+    print(f"  mean    = {values.mean():.2f}")
+    print(f"  median  = {np.median(values):.2f}")
+    print(f"  var     = {values.var():.2f}")
 
 
-def play(model_path: str, episodes: int = 10, render: bool = True, env_kwargs: dict = None, out_csv: str = None):
-    env_kwargs = env_kwargs or {"height": 5, "width": 5, "depth": 5, "num_mines": 15, "render_mode": "ansi"}
+def load_weights(agent: DuelingDCNNAgent, path: str) -> bool:
+    """
+    Robust loader:
+      - If file is a checkpoint dict with "online_state", load it.
+      - Else try to treat file as a raw state_dict.
+    """
+    if not os.path.exists(path):
+        return False
 
-    env = MinesweeperEnv(**env_kwargs)
-    agent = Agent(env.action_space)
+    payload = torch.load(path, map_location=agent.device)
 
-    # Build networks to match observation shape before loading weights
+    # Case 1: checkpoint-style dict
+    if isinstance(payload, dict) and "online_state" in payload:
+        agent.online.load_state_dict(payload["online_state"])
+
+        # Prefer target_state if present; otherwise mirror online
+        if "target_state" in payload:
+            agent.target.load_state_dict(payload["target_state"])
+        else:
+            agent.target.load_state_dict(agent.online.state_dict())
+
+        agent.target.eval()
+        return True
+
+    # Case 2: maybe someone saved {"state_dict": ...}
+    if isinstance(payload, dict) and "state_dict" in payload:
+        agent.online.load_state_dict(payload["state_dict"])
+        agent.target.load_state_dict(agent.online.state_dict())
+        agent.target.eval()
+        return True
+
+    # Case 3: raw state_dict
+    try:
+        agent.online.load_state_dict(payload)
+        agent.target.load_state_dict(agent.online.state_dict())
+        agent.target.eval()
+        return True
+    except Exception:
+        return False
+
+def select_action_greedy(agent: DuelingDCNNAgent, obs: np.ndarray) -> int:
+    """
+    Deterministic masked argmax policy.
+    Avoids epsilon exploration during evaluation.
+    """
+    legal = agent.legal_action_indices(obs)
+    if legal.size == 0:
+        return int(np.random.randint(0, agent.n_actions))
+
+    obs_b = np.expand_dims(obs, axis=0)  # (1,H,W,D)
+    x = agent.obs_to_tensor(obs_b)
+
+    with torch.no_grad():
+        q = agent.online(x)[0]  # (n_actions,)
+
+        mask = torch.zeros(agent.n_actions, dtype=torch.bool, device=agent.device)
+        mask[torch.from_numpy(legal).to(agent.device)] = True
+
+        q_masked = q.clone()
+        q_masked[~mask] = -1e9
+
+        return int(torch.argmax(q_masked).item())
+
+def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = False):
     obs, _ = env.reset()
-    if agent.policy_net is None:
-        agent._build_networks(obs.shape)
+    done = False
 
-    # Load weights
-    if os.path.exists(model_path):
-        agent.load(model_path)
-        print(f"Loaded model from {model_path}")
-    else:
-        print(f"Model file not found: {model_path}. Running with untrained policy.")
+    total_reward = 0.0
+    total_moves = 0
+    won = True
 
-    # CSV header
-    if out_csv:
-        write_header = not os.path.exists(out_csv)
-        if write_header:
-            with open(out_csv, "w") as f:
-                f.write("episode,total_reward,steps,good_moves,mine_hits,win\n")
+    while not done:
+        if render and env.render_mode == "ansi":
+            print(env.render())
 
-    # aggregate stats
-    total_rewards = []
-    total_wins = 0
-    total_good_moves = 0
-    total_mine_hits = 0
+        action = select_action_greedy(agent, obs)
+        obs, reward, terminated, truncated, info = env.step(action)
 
-    for ep in range(1, episodes + 1):
-        obs, _ = env.reset()
-        done = False
-        total_reward = 0.0
-        steps = 0
-        good_moves = 0
-        mine_hits = 0
-        start = time.time()
+        total_reward += reward
+        total_moves += 1
 
-        while not done:
-            if render:
-                print(env.render())
+        # Same win/loss logic as run_agent_batch:
+        # any negative reward implies a mine hit / loss path.
+        if reward < 0:
+            won = False
 
-            action = agent.select_action(obs)
-            x, y, z = _decode_action(action, env.height, env.width)
+        done = terminated or truncated
 
-            next_obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-
-            # Good move = any positive reward (environment awards number of newly revealed tiles)
-            if reward > 0:
-                good_moves += 1
-            # Mine hit detection: environment encodes revealed mine as -10 at the revealed cell
-            elif reward < 0 and next_obs[x, y, z] == -10:
-                mine_hits += 1
-
-            obs = next_obs
-            total_reward += reward
-            steps += 1
-
-            # safety cap
-            if steps > 2000:
-                break
-
-        elapsed = time.time() - start
-        win = getattr(env.game, "win", False)
-        total_rewards.append(total_reward)
-        total_wins += 1 if win else 0
-        total_good_moves += good_moves
-        total_mine_hits += mine_hits
-
-        print(f"Episode {ep:3d} | reward {total_reward:7.1f} | steps {steps:3d} | good_moves {good_moves:3d} | mine_hits {mine_hits:3d} | win {win} | time {elapsed:.2f}s")
-        print(env.render())
-
-        if out_csv:
-            with open(out_csv, "a") as f:
-                f.write(f"{ep},{total_reward},{steps},{good_moves},{mine_hits},{int(win)}\n")
-
-    # summary
-    avg_reward = float(np.mean(total_rewards)) if total_rewards else 0.0
-    win_rate = total_wins / episodes if episodes > 0 else 0.0
-    print("\n=== SUMMARY ===")
-    print(f"Episodes: {episodes}")
-    print(f"Win rate: {win_rate:.2%} ({total_wins}/{episodes})")
-    print(f"Average reward: {avg_reward:.2f}")
-    print(f"Total good moves: {total_good_moves}")
-    print(f"Total mine hits: {total_mine_hits}")
-    if out_csv:
-        print(f"Per-episode results appended to {out_csv}")
-
+    return {
+        "reward": total_reward,
+        "moves": total_moves,
+        "won": won
+    }
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--model", type=str, default="dueling_agent.pth", help="Path to model checkpoint")
-    p.add_argument("--episodes", type=int, default=5)
-    p.add_argument("--no-render", dest="render", action="store_false")
+    p.add_argument("--episodes", type=int, default=1000)
     p.add_argument("--height", type=int, default=5)
     p.add_argument("--width", type=int, default=5)
     p.add_argument("--depth", type=int, default=5)
     p.add_argument("--num-mines", type=int, default=15)
+    p.add_argument("--render", action="store_true", help="Print ANSI board each step (keeps batch summary format)")
+    p.add_argument("--device", type=str, default=None, help="cpu or cuda (defaults to agent auto-choice)")
     return p.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
-    env_kwargs = {"height": args.height, "width": args.width, "depth": args.depth, "num_mines": args.num_mines, "render_mode": "ansi"}
-    play(args.model, episodes=args.episodes, render=args.render, env_kwargs=env_kwargs)
+    render_mode = "ansi" if args.render else None
+
+    env = MinesweeperEnv(
+        height=args.height,
+        width=args.width,
+        depth=args.depth,
+        num_mines=args.num_mines,
+        render_mode=render_mode
+    )
+
+    agent = DuelingDCNNAgent(
+        height=args.height,
+        width=args.width,
+        depth=args.depth,
+        device=args.device
+    )
+
+    checkpoint_path = "dqn-checkpoint"
+    checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
+    load_path = checkpoints[-1] if checkpoints else "dqn-checkpoint-0.pth"
+    AGENT_NAME = load_path.split(".")[0]
+
+    loaded = load_weights(agent, load_path)
+    if loaded:
+        print(f"Loaded model from {load_path}")
+    else:
+        print(f"WARNING: Could not load model from {load_path}. "
+              f"Running with untrained/random-initialized weights.")
+
+    rewards = []
+    moves = []
+    wins = 0
+    losses = 0
+
+    print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...\n")
+
+    for i in range(args.episodes):
+        result = run_episode(env, agent, render=args.render)
+
+        rewards.append(result["reward"])
+        moves.append(result["moves"])
+
+        if result["won"]:
+            wins += 1
+        else:
+            losses += 1
+
+        if (i + 1) % 100 == 0:
+            print(f"  Completed {i + 1}/{args.episodes}")
+
+    # ---------- SUMMARY ----------
+    summarize(rewards, "Total Reward")
+    summarize(moves, "Number of Moves")
+
+    print("\nWin / Loss:")
+    print(f"  Wins   = {wins}")
+    print(f"  Losses = {losses}")
+    print(f"  Win rate = {wins / args.episodes:.3f}")
+
+if __name__ == "__main__":
+    main()

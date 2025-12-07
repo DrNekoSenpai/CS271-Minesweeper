@@ -62,7 +62,6 @@ class Dueling3DCNN(nn.Module):
             ResBlock3D(128),
         )
 
-        # Compute flattened dim with dummy forward
         with torch.no_grad():
             dummy = torch.zeros(1, 1, depth, height, width)
             f = self._forward_trunk(dummy)
@@ -201,7 +200,7 @@ class DuelingDCNNAgent:
         obs: (H,W,D)
         returns flat indices of legal actions where obs == -1
         """
-        coords = np.argwhere(obs == -1)  # axis order: (x, y, z)
+        coords = np.argwhere(obs == -1)  # (x, y, z)
         if coords.size == 0:
             return np.array([], dtype=np.int64)
 
@@ -410,7 +409,6 @@ class DuelingDCNNAgent:
 
         torch.save(checkpoint, path)
 
-
     def load_checkpoint(self, path: str) -> int:
         """
         Load training state from a checkpoint.
@@ -441,3 +439,33 @@ class DuelingDCNNAgent:
         self.target.eval()
 
         return step
+    
+    # -------------------------
+    # Inference save/load
+    # -------------------------
+    def save_model(self, path: str) -> None:
+        """
+        Save only what you need to run inference later.
+        """
+        payload = {
+            "online_state": self.online.state_dict(),
+            "H": self.H,
+            "W": self.W,
+            "D": self.D,
+        }
+        torch.save(payload, path)
+
+    def load_model(self, path: str) -> None:
+        """
+        Load inference weights.
+        """
+        payload = torch.load(path, map_location=self.device)
+
+        # Support both styles:
+        # 1) our payload dict
+        # 2) raw state_dict
+        state = payload["online_state"] if isinstance(payload, dict) and "online_state" in payload else payload
+
+        self.online.load_state_dict(state)
+        self.target.load_state_dict(self.online.state_dict())
+        self.target.eval()

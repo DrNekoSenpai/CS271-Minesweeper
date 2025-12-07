@@ -20,31 +20,33 @@ def make_env(depth, height, width, num_mines):
         )
     return _thunk
 
-
-def main():
+def main(size:int, mines:int):
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-envs", type=int, default=8)
-    parser.add_argument("--steps", type=int, default=1000000)
-    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--steps", type=int, default=500000)
+    parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
 
+    directory = f"./metrics/s{size}-m{mines}"
+    if not os.path.exists(directory): os.makedirs(directory)
+
     # Vectorized envs
     envs = gym.vector.SyncVectorEnv([
-        make_env(5, 5, 5, 15) for _ in range(args.num_envs)
+        make_env(size, size, size, mines) for _ in range(args.num_envs)
     ])
 
     obs, info = envs.reset()  # obs shape: (num_envs, H, W, D)
 
     agent = DuelingDCNNAgent(
-        height=5, width=5, depth=5,
+        height=size, width=size, depth=size,
         lr=args.lr,
         batch_size=args.batch_size,
-        warmup=10000,
-        target_update=2000, 
-        buffer_size=500000, 
-        eps_decay_steps=200000
+        warmup=5000,
+        target_update=1000, 
+        buffer_size=200000, 
+        eps_decay_steps=150000
     )
 
     episode_rewards = np.zeros(args.num_envs, dtype=np.float32)
@@ -52,9 +54,9 @@ def main():
     episode_safe_tiles = np.zeros(args.num_envs, dtype=np.float32)
     completed = 0
 
-    checkpoint_path = "dqn-checkpoint"
+    checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
     checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
-    load_path = checkpoints[-1] if checkpoints else "dqn-checkpoint-0.pth"
+    load_path = checkpoints[-1] if checkpoints else f"dqn-checkpoint-0.pth"
 
     save_every = 5000
     start_step = 0
@@ -74,7 +76,6 @@ def main():
         with open("metrics.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
         
-        # [step=98685] reward=-99.0 safe_moves=1.0 safe_tiles=1.0
         metrics_pattern = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
         for line in lines: 
             match = re.search(metrics_pattern, line)
@@ -86,10 +87,10 @@ def main():
                 metrics["safe_tiles"].append(float(safe_tiles))
 
     else: 
-        with open("metrics.log", "w", encoding="utf-8") as file: 
+        with open(f"./metrics/s{size}-m{mines}/metrics.log", "w", encoding="utf-8") as file: 
             file.write("")
 
-        with open("loss.log", "w", encoding="utf-8") as file: 
+        with open(f"./metrics/s{size}-m{mines}/loss.log", "w", encoding="utf-8") as file: 
             file.write("")
 
     for step in range(start_step, args.steps):
@@ -129,7 +130,7 @@ def main():
             agent.save_checkpoint(save_path, step)
 
             print(f"Saved checkpoint: {save_path}")
-            with open('metrics.log', 'a', encoding='utf-8') as file: 
+            with open(f'./metrics/s{size}-m{mines}/metrics.log', 'a', encoding='utf-8') as file: 
                 for l in logs: 
                     s, reward, safe_moves, safe_tiles = l
                     file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
@@ -143,10 +144,10 @@ def main():
                 file.write(f"Saved checkpoint: {save_path}\n")
                 logs = []
 
-            with open('loss.log', 'a', encoding="utf-8") as file: 
+            with open(f'./metrics/s{size}-m{mines}/loss.log', 'a', encoding="utf-8") as file: 
                 file.write(f"[step={step}]: {stats['loss']:.6f}\n")
 
-            # Remove old checkpoints
+            # Remove old checkpoints and models
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
             for fname in os.listdir("."): 
                 match = pattern.match(fname)
@@ -163,7 +164,7 @@ def main():
             plt.ylabel("Average Reward")
             plt.title("Reward Curve")
             plt.grid(True)
-            plt.savefig(f"./metrics/rewards-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/s{size}-m{mines}/rewards-{step}.png", dpi=600)
             plt.close()
             print(f"Saved reward curve to rewards-{step}.png")
 
@@ -175,9 +176,9 @@ def main():
             plt.ylabel("Average Safe Moves")
             plt.title("Safe Moves")
             plt.grid(True)
-            plt.savefig(f"./metrics/safe_moves-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/s{size}-m{mines}/safe_moves-{step}.png", dpi=600)
             plt.close()
-            print(f"Saved reward curve to safe_moves-{step}.png")
+            print(f"Saved safe moves curve to safe_moves-{step}.png")
 
             plt.figure(figsize=(10, 6))
             plt.plot(metrics["steps"], metrics["safe_tiles"], label="Safe Tiles", linestyle="-")
@@ -187,17 +188,17 @@ def main():
             plt.ylabel("Safe Tiles")
             plt.title("Safe Tiles")
             plt.grid(True)
-            plt.savefig(f"./metrics/safe_tiles-{step}.png", dpi=600)
+            plt.savefig(f"./metrics/s{size}-m{mines}/safe_tiles-{step}.png", dpi=600)
             plt.close()
-            print(f"Saved reward curve to safe_tiles-{step}.png")
+            print(f"Saved safe tiles curve to safe_tiles-{step}.png")
 
             pattern = re.compile(r"(rewards|safe_moves|safe_tiles)-(\d+)\.png")
-            for fname in os.listdir("./metrics/"): 
+            for fname in os.listdir(f"./metrics/s{size}-m{mines}/"): 
                 match = pattern.match(fname)
                 if not match: continue 
 
                 file_step = int(match.group(2))
-                if file_step < step: os.remove(f"./metrics/{fname}")
+                if file_step < step: os.remove(f"./metrics/s{size}-m{mines}/{fname}")
 
             # pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
             # for fname in os.listdir("."): 
@@ -207,8 +208,7 @@ def main():
             #     file_step = int(match.group(1))
             #     if file_step < step: os.remove(fname)
 
-    agent.save(f"dueling_cnn.pt")
-    print(f"Saved model to dueling_cnn.pt")
-
 if __name__ == "__main__":
-    main()
+    # main(size=4, mines=5)
+    main(size=5, mines=5)
+    main(size=5, mines=10)
