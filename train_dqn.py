@@ -73,7 +73,7 @@ def main(size:int, mines:int):
         start_step = agent.load_checkpoint(load_path)
         print(f"Loaded checkpoint {load_path} from step {start_step}")
 
-        with open("metrics.log", "r", encoding="utf-8") as file: 
+        with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
         
         metrics_pattern = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
@@ -134,7 +134,6 @@ def main(size:int, mines:int):
                 for l in logs: 
                     s, reward, safe_moves, safe_tiles = l
                     file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
-                    if safe_moves > safe_tiles: print("Warning: moves greater than tiles revealed")
 
                     metrics["steps"].append(s)
                     metrics["reward"].append(reward)
@@ -162,7 +161,7 @@ def main(size:int, mines:int):
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
             plt.ylabel("Average Reward")
-            plt.title("Reward Curve")
+            plt.title(f"Reward Curve for size={size}, mines={mines}")
             plt.grid(True)
             plt.savefig(f"./metrics/s{size}-m{mines}/rewards-{step}.png", dpi=600)
             plt.close()
@@ -174,7 +173,7 @@ def main(size:int, mines:int):
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
             plt.ylabel("Average Safe Moves")
-            plt.title("Safe Moves")
+            plt.title(f"Safe Moves for size={size}, mines={mines}")
             plt.grid(True)
             plt.savefig(f"./metrics/s{size}-m{mines}/safe_moves-{step}.png", dpi=600)
             plt.close()
@@ -186,7 +185,7 @@ def main(size:int, mines:int):
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
             plt.ylabel("Safe Tiles")
-            plt.title("Safe Tiles")
+            plt.title(f"Safe Tiles for size={size}, mines={mines}")
             plt.grid(True)
             plt.savefig(f"./metrics/s{size}-m{mines}/safe_tiles-{step}.png", dpi=600)
             plt.close()
