@@ -24,7 +24,7 @@ import torch
 
 from backend.environment import MinesweeperEnv
 from agents.dueling_cnn_agent import DuelingDCNNAgent
-
+from tqdm import tqdm
 
 def summarize(values, name):
     values = np.array(values, dtype=np.float32)
@@ -132,36 +132,32 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--episodes", type=int, default=1000)
-    p.add_argument("--height", type=int, default=5)
-    p.add_argument("--width", type=int, default=5)
-    p.add_argument("--depth", type=int, default=5)
-    p.add_argument("--num-mines", type=int, default=15)
+    p.add_argument("--episodes", type=int, default=5000)
     p.add_argument("--render", action="store_true", help="Print ANSI board each step (keeps batch summary format)")
     p.add_argument("--device", type=str, default=None, help="cpu or cuda (defaults to agent auto-choice)")
     return p.parse_args()
 
 
-def main():
+def main(size:int, mines:int):
     args = parse_args()
     render_mode = "ansi" if args.render else None
 
     env = MinesweeperEnv(
-        height=args.height,
-        width=args.width,
-        depth=args.depth,
-        num_mines=args.num_mines,
+        height=size,
+        width=size,
+        depth=size,
+        num_mines=mines,
         render_mode=render_mode
     )
 
     agent = DuelingDCNNAgent(
-        height=args.height,
-        width=args.width,
-        depth=args.depth,
+        height=size,
+        width=size,
+        depth=size,
         device=args.device
     )
 
-    checkpoint_path = "dqn-checkpoint"
+    checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
     checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
     load_path = checkpoints[-1] if checkpoints else "dqn-checkpoint-0.pth"
     AGENT_NAME = load_path.split(".")[0]
@@ -178,9 +174,9 @@ def main():
     wins = 0
     losses = 0
 
-    print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...\n")
+    print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
 
-    for i in range(args.episodes):
+    for i in tqdm(range(args.episodes)):
         result = run_episode(env, agent, render=args.render)
 
         rewards.append(result["reward"])
@@ -190,9 +186,6 @@ def main():
             wins += 1
         else:
             losses += 1
-
-        if (i + 1) % 100 == 0:
-            print(f"  Completed {i + 1}/{args.episodes}")
 
     # ---------- SUMMARY ----------
     summarize(rewards, "Total Reward")
@@ -204,4 +197,6 @@ def main():
     print(f"  Win rate = {wins / args.episodes:.3f}")
 
 if __name__ == "__main__":
-    main()
+    main(4, 5)
+    main(5, 5)
+    main(5, 10)
