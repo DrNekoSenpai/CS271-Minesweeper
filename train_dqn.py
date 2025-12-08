@@ -20,10 +20,9 @@ def make_env(depth, height, width, num_mines):
         )
     return _thunk
 
-def main(size:int, mines:int):
+def main(size:int, mines:int, num_steps:int):
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-envs", type=int, default=8)
-    parser.add_argument("--steps", type=int, default=250000)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--fresh", action="store_true")
@@ -93,7 +92,7 @@ def main(size:int, mines:int):
         with open(f"./metrics/s{size}-m{mines}/loss.log", "w", encoding="utf-8") as file: 
             file.write("")
 
-    for step in range(start_step, args.steps + 1):
+    for step in range(start_step, num_steps + 1):
         actions = agent.select_actions(obs)
 
         next_obs, rewards, terminated, truncated, infos = envs.step(actions)
@@ -209,5 +208,6 @@ def main(size:int, mines:int):
 
 if __name__ == "__main__":
     # main(size=4, mines=5)
-    main(size=5, mines=5)
-    main(size=5, mines=10)
+    # main(size=5, mines=5)
+    main(size=5, mines=10, num_steps=160000)
+    main(size=5, mines=8, num_steps=160000)
