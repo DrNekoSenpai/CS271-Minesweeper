@@ -51,7 +51,9 @@ class MinesweeperEnv(gym.Env):
         legal = np.flatnonzero(mask)
 
         info = {}
-        safe_move = 0 
+        safe_move = 0
+        safe_tiles = 0
+        reward = 0.0
 
         # Rebound if illegal
         if action < 0 or action >= self.action_space.n or not mask[action]:
@@ -90,11 +92,15 @@ class MinesweeperEnv(gym.Env):
             return obs, reward, terminated, truncated, info
 
         # Reward for progress
-        new_visible = np.sum(self.game.visible >= 0)
-        delta = int(new_visible - prev_visible)
+        x, y, z = self._decode_action(action)
+        H, W, D = obs.shape
+        x0, x1 = max(x-1,0), min(x+2,H)
+        y0, y1 = max(y-1,0), min(y+2,W)
+        z0, z1 = max(z-1,0), min(z+2,D)
 
-        reward = float(delta)
-        safe_tiles = max(delta, 0)
+        # Check if any neighbor is revealed (>= 0)
+        if np.any(obs[x0:x1, y0:y1, z0:z1] >= 0):
+            reward += 0.05  # small bonus
 
         # "Good move" semantics: only count if we actually revealed something new
         safe_move = 1 if safe_tiles > 0 else 0
