@@ -6,7 +6,7 @@ import random
 HEIGHT = 5
 WIDTH = 5
 DEPTH = 5
-MINES = 15
+MINES = 10
 
 class Agent:
     """

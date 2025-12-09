@@ -1,0 +1,20 @@
+Total Reward:
+  min     = -100.00
+  max     = 16.00
+  mean    = -22.52
+  median  = -7.00
+  var     = 1279.86
+  stdev   = 35.78
+
+Number of Moves:
+  min     = 1.00
+  max     = 43.00
+  mean    = 14.88
+  median  = 15.00
+  var     = 64.99
+  stdev   = 8.06
+
+Win / Loss:
+  Wins   = 0
+  Losses = 5000
+  Win rate = 0.000

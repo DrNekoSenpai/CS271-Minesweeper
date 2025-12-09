@@ -34,6 +34,7 @@ def summarize(values, name):
     print(f"  mean    = {values.mean():.2f}")
     print(f"  median  = {np.median(values):.2f}")
     print(f"  var     = {values.var():.2f}")
+    print(f"  stdev   = {values.std():.2f}")
 
 
 def load_weights(agent: DuelingDCNNAgent, path: str) -> bool:
@@ -199,4 +200,5 @@ def main(size:int, mines:int):
 if __name__ == "__main__":
     main(4, 5)
     main(5, 5)
+    main(5, 8)
     main(5, 10)

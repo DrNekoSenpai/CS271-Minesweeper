@@ -5,9 +5,9 @@ from backend.environment import MinesweeperEnv
 
 # ========== CONFIG ==========
 AGENT_NAME = "bayesian_approximation_agent" # Name of agent to run
-NUM_EPISODES = 1000         # Number of episodes to run
+NUM_EPISODES = 5000         # Number of episodes to run
 SIZE = 5                    # Size of the Minesweeper grid (height, width, depth)
-NUM_MINES = 15              # Number of mines in the grid
+NUM_MINES = 10              # Number of mines in the grid
 # ============================
 
 def load_agent(agent_name, action_space):
@@ -54,6 +54,7 @@ def summarize(values, name):
     print(f"  mean    = {values.mean():.2f}")
     print(f"  median  = {np.median(values):.2f}")
     print(f"  var     = {values.var():.2f}")
+    print(f"  stdev   = {values.std():.2f}")
 
 def main():
     env = MinesweeperEnv(
