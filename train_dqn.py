@@ -61,11 +61,16 @@ def main(size:int, mines:int, num_steps:int):
     start_step = 0
     logs = []
 
-    metrics = {
+    metrics_dict = {
         "steps": [], 
         "reward": [], 
         "safe_moves": [], 
         "safe_tiles": []
+    }
+
+    loss_dict = {
+        "steps": [],
+        "loss": [] 
     }
 
     if not args.fresh and os.path.exists(load_path): 
@@ -80,10 +85,21 @@ def main(size:int, mines:int, num_steps:int):
             match = re.search(metrics_pattern, line)
             if match: 
                 steps, reward, safe_moves, safe_tiles = match.groups()
-                metrics["steps"].append(int(steps))
-                metrics["reward"].append(float(reward))
-                metrics["safe_moves"].append(float(safe_moves))
-                metrics["safe_tiles"].append(float(safe_tiles))
+                metrics_dict["steps"].append(int(steps))
+                metrics_dict["reward"].append(float(reward))
+                metrics_dict["safe_moves"].append(float(safe_moves))
+                metrics_dict["safe_tiles"].append(float(safe_tiles))
+
+        with open(f"./metrics/s{size}-m{mines}/loss.log", "r", encoding="utf-8") as file: 
+            lines = file.readlines() 
+
+        loss_pattern = r"\[step=(\d+)\]: (.*)"
+        for line in lines: 
+            match = re.search(loss_pattern, line)
+            if match: 
+                steps, loss_value = match.groups()
+                loss_dict["steps"].append(int(steps))
+                loss_dict["loss"].append(float(loss_value))
 
     else: 
         with open(f"./metrics/s{size}-m{mines}/metrics.log", "w", encoding="utf-8") as file: 
@@ -134,16 +150,18 @@ def main(size:int, mines:int, num_steps:int):
                     s, reward, safe_moves, safe_tiles = l
                     file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
 
-                    metrics["steps"].append(s)
-                    metrics["reward"].append(reward)
-                    metrics["safe_moves"].append(safe_moves)
-                    metrics["safe_tiles"].append(safe_tiles)
+                    metrics_dict["steps"].append(s)
+                    metrics_dict["reward"].append(reward)
+                    metrics_dict["safe_moves"].append(safe_moves)
+                    metrics_dict["safe_tiles"].append(safe_tiles)
                     
                 file.write(f"Saved checkpoint: {save_path}\n")
                 logs = []
 
             with open(f'./metrics/s{size}-m{mines}/loss.log', 'a', encoding="utf-8") as file: 
                 file.write(f"[step={step}]: {stats['loss']:.6f}\n")
+                loss_dict["loss"].append(np.round(stats['loss'], 6))
+                loss_dict["steps"].append(step)
 
             # Remove old checkpoints and models
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
@@ -154,8 +172,19 @@ def main(size:int, mines:int, num_steps:int):
                 file_step = int(match.group(1))
                 if file_step < step: os.remove(fname)
 
+        if step % save_every == 0: 
             plt.figure(figsize=(10, 6))
-            plt.plot(metrics["steps"], metrics["reward"], label="Rewards", linestyle="-")
+            plt.plot(loss_dict["steps"], loss_dict["loss"], label="Loss", linestyle="-") 
+            plt.xlabel("Step")
+            plt.ylabel("Loss Values")
+            plt.title(f"Loss Values for size={size}, mines={mines}")
+            plt.grid(True)
+            plt.savefig(f"./metrics/s{size}-m{mines}/loss-{step}.png", dpi=600)
+            plt.close()
+            print(f"Saved loss curve to loss-{step}.png")
+
+            plt.figure(figsize=(10, 6))
+            plt.plot(metrics_dict["steps"], metrics_dict["reward"], label="Rewards", linestyle="-")
             ax = plt.gca()
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
@@ -167,7 +196,7 @@ def main(size:int, mines:int, num_steps:int):
             print(f"Saved reward curve to rewards-{step}.png")
 
             plt.figure(figsize=(10, 6))
-            plt.plot(metrics["steps"], metrics["safe_moves"], label="Safe Moves", linestyle="-")
+            plt.plot(metrics_dict["steps"], metrics_dict["safe_moves"], label="Safe Moves", linestyle="-")
             ax = plt.gca()
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
@@ -179,7 +208,7 @@ def main(size:int, mines:int, num_steps:int):
             print(f"Saved safe moves curve to safe_moves-{step}.png")
 
             plt.figure(figsize=(10, 6))
-            plt.plot(metrics["steps"], metrics["safe_tiles"], label="Safe Tiles", linestyle="-")
+            plt.plot(metrics_dict["steps"], metrics_dict["safe_tiles"], label="Safe Tiles", linestyle="-")
             ax = plt.gca()
             ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
             plt.xlabel("Step")
@@ -198,16 +227,8 @@ def main(size:int, mines:int, num_steps:int):
                 file_step = int(match.group(2))
                 if file_step < step: os.remove(f"./metrics/s{size}-m{mines}/{fname}")
 
-            # pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
-            # for fname in os.listdir("."): 
-            #     match = pattern.match(fname)
-            #     if not match: continue 
-
-            #     file_step = int(match.group(1))
-            #     if file_step < step: os.remove(fname)
-
 if __name__ == "__main__":
-    # main(size=4, mines=5)
-    # main(size=5, mines=5)
+    main(size=4, mines=5, num_steps=250000)
+    main(size=5, mines=5, num_steps=250000)
+    main(size=5, mines=8, num_steps=100000)
     main(size=5, mines=10, num_steps=160000)
-    main(size=5, mines=8, num_steps=160000)

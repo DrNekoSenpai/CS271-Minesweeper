@@ -150,68 +150,108 @@ class MinesweeperEnv(gym.Env):
 
         return "\n".join(out)
     
-    def _render_pyvista(self): 
+    def _render_pyvista(self):
         import pyvista as pv
+        from itertools import product
+
         obs = self.game.get_observation()
-        height, width, depth = obs.shape
+        H, W, D = obs.shape
 
         # Lazy init plotter
-        if self._plotter is None: 
-            self._plotter = pv.Plotter()
-            self._plotter.add_axes()
-            self._plotter.enable_eye_dome_lighting()
+        if getattr(self, "_plotter", None) is None:
+            self._plotter = pv.Plotter(window_size=(1280, 720))
             self._plotter.set_background("black")
+            self._plotter.enable_eye_dome_lighting()
+            self._plotter.add_axes()
 
-        # Clear previous actors 
+            # Stable camera for video (isometric-style)
+            # You can also set a custom position tuple if you prefer.
+            self._plotter.camera_position = "iso"
+            self._plotter.camera.zoom(1.1)
+
+            self._first_render = True
+
+        # Remove previous actors while preserving camera
         self._plotter.clear()
 
-        cube_size = 1.0 
-        half = cube_size / 2.0 
+        cube_size = 1.0
+        half = cube_size / 2.0
 
-        number_points = []
+        # Collect points by type
+        unrevealed_pts = []
+        number_pts = []
         number_labels = []
-        mine_points = []
+        mine_pts = []
 
-        for x, y, z in product(range(self.height), range(self.width), range(self.depth)): 
-            v = obs[x, y, z] 
+        # Use obs dimensions, not self.height/width/depth just in case
+        for x, y, z in product(range(H), range(W), range(D)):
+            v = obs[x, y, z]
 
-            wx = x * cube_size 
-            wy = y * cube_size 
-            wz = z * cube_size 
+            # World coords
+            wx = x * cube_size
+            wy = y * cube_size
+            wz = z * cube_size
 
             # Buried tiles cannot be seen
-            if v == -2: continue 
-
-            # Exposed but unrevealed tiles are grey translucent cubes
-            if v == -1: 
-                cube = pv.Cube(center=(wx, wy, wz), x_length=cube_size, y_length=cube_size, z_length=cube_size)
-                self._plotter.add_mesh(cube, color="gray", opacity=0.2)
+            if v == -2:
                 continue
 
-            # Revealed mines are red spheres
-            if v == -10: 
-                sphere = pv.Sphere(radius=half*0.7, center=(wx,wy,wz))
-                self._plotter.add_mesh(sphere, color="red")
-                # Continue 
+            # Exposed but unrevealed
+            if v == -1:
+                unrevealed_pts.append([wx, wy, wz])
+                continue
 
-            # Tiles adjacent to mines are faint cubes with number labels. Completely safe tiles are also not shown
-            if v > 0: 
-                cube = pv.Cube(center=(wx, wy, wz), x_length=cube_size, y_length=cube_size, z_length=cube_size)
-                self._plotter.add_mesh(cube, color="white", opacity=0.08)
+            # Revealed mine
+            if v == -10:
+                mine_pts.append([wx, wy, wz])
+                continue
 
-                number_points.append([wx, wy, wz])
+            # Revealed number
+            if v > 0:
+                number_pts.append([wx, wy, wz])
                 number_labels.append(str(v))
+                continue
 
-        if number_points: 
-            pts = pv.PolyData(number_points)
-            self._plotter.add_point_labels(pts, number_labels, font_size=16, text_color="white", point_size=0, shape=None, always_visible=True)
+            # v == 0: you can choose to show or hide
+            # For visual cleanliness, we hide zeros.
 
-        # Optional: wireframe bounding box for the whole cube
-        # Bounds are in (xmin, xmax, ymin, ymax, zmin, zmax)
+        # ---------- Draw unrevealed cubes (glyphs) ----------
+        if unrevealed_pts:
+            pts = pv.PolyData(unrevealed_pts)
+            cube = pv.Cube(x_length=cube_size, y_length=cube_size, z_length=cube_size)
+            cubes = pts.glyph(geom=cube, scale=False)
+            self._plotter.add_mesh(cubes, color="gray", opacity=0.22)
+
+        # ---------- Draw numbered cubes (faint) ----------
+        if number_pts:
+            pts = pv.PolyData(number_pts)
+            cube = pv.Cube(x_length=cube_size, y_length=cube_size, z_length=cube_size)
+            cubes = pts.glyph(geom=cube, scale=False)
+            self._plotter.add_mesh(cubes, color="white", opacity=0.08)
+
+            # Labels
+            self._plotter.add_point_labels(
+                pts,
+                number_labels,
+                font_size=16,
+                text_color="white",
+                point_size=0,
+                shape=None,
+                always_visible=True
+            )
+
+        # ---------- Draw mines as spheres ----------
+        if mine_pts:
+            pts = pv.PolyData(mine_pts)
+            sphere = pv.Sphere(radius=half * 0.7)
+            spheres = pts.glyph(geom=sphere, scale=False)
+            self._plotter.add_mesh(spheres, color="red")
+
+        # ---------- Outline bounding box ----------
         bounds = (
-            -half, (height - 0.5) * cube_size,
-            -half, (width - 0.5) * cube_size,
-            -half, (depth - 0.5) * cube_size,
+            -half, (H - 0.5) * cube_size,
+            -half, (W - 0.5) * cube_size,
+            -half, (D - 0.5) * cube_size,
         )
         outline = pv.Cube(bounds=bounds)
         self._plotter.add_mesh(outline, style="wireframe", color="cyan", opacity=0.3)
@@ -219,11 +259,10 @@ class MinesweeperEnv(gym.Env):
         # Show / update
         if getattr(self, "_first_render", True):
             self._first_render = False
-            self._plotter.show(auto_close=False)  # keep window open
+            self._plotter.show(auto_close=False)
         else:
             self._plotter.render()
 
-        # For Gymnasium's "3d" mode, returning None is fine
         return None
     
     def render(self): 
