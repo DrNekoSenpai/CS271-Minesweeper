@@ -1,5 +1,4 @@
 import random
-from itertools import product
 from dataclasses import dataclass
 from typing import Deque, Dict, List, Optional, Tuple
 
@@ -41,7 +40,7 @@ class Dueling3DCNN(nn.Module):
 
         # Stem
         self.stem = nn.Sequential(
-            nn.Conv3d(2, 32, 3, padding=1),  # 2 input channels now
+            nn.Conv3d(1, 32, 3, padding=1),
             nn.GroupNorm(8, 32),
             nn.ReLU(),
         )
@@ -64,11 +63,9 @@ class Dueling3DCNN(nn.Module):
         )
 
         with torch.no_grad():
-            # 2 channels now: obs + prior
-            dummy = torch.zeros(1, 2, depth, height, width)
+            dummy = torch.zeros(1, 1, depth, height, width)
             f = self._forward_trunk(dummy)
             flat_dim = f.view(1, -1).shape[1]
-
 
         self.fc = nn.Sequential(
             nn.Linear(flat_dim, hidden),
@@ -199,18 +196,18 @@ class DuelingDCNNAgent:
     # Action masking helpers
     # -------------------------
     def legal_action_indices(self, obs: np.ndarray) -> np.ndarray:
-        coords = np.argwhere(obs == -1)  # exposed tiles
-        selected = []
-        for x, y, z in coords:
-            # check neighbors
-            x0, x1 = max(x-1,0), min(x+2,self.H)
-            y0, y1 = max(y-1,0), min(y+2,self.W)
-            z0, z1 = max(z-1,0), min(z+2,self.D)
-            if np.any(obs[x0:x1, y0:y1, z0:z1] >= 0):  # neighbor revealed?
-                selected.append((x, y, z))
-        if not selected:
-            selected = coords.tolist()  # fallback if no neighbor revealed
-        x, y, z = np.array(selected).T
+        """
+        obs: (H,W,D)
+        returns flat indices of legal actions where obs == -1
+        """
+        coords = np.argwhere(obs == -1)  # (x, y, z)
+        if coords.size == 0:
+            return np.array([], dtype=np.int64)
+
+        x = coords[:, 0]
+        y = coords[:, 1]
+        z = coords[:, 2]
+
         idx = z * (self.H * self.W) + y * self.W + x
         return idx.astype(np.int64)
 
@@ -242,29 +239,14 @@ class DuelingDCNNAgent:
     # -------------------------
     def obs_to_tensor(self, obs_batch: np.ndarray) -> torch.Tensor:
         """
-        Converts (B,H,W,D) to (B,1,D,H,W) OR (B,2,D,H,W) if adding prior.
+        Converts (B,H,W,D) to (B,1,D,H,W), float.
         """
-        B, H, W, D = obs_batch.shape
-        # Normalize the main observation lightly
+        # Normalize lightly for stability
         x = obs_batch.astype(np.float32) / 26.0
-        x = np.transpose(x, (0, 3, 1, 2))  # (B,D,H,W)
-
-        # ---------- NEW: compute simple prior channel ----------
-        prior = np.zeros_like(obs_batch, dtype=np.float32)
-        for b in range(B):
-            for dx, dy, dz in product(range(H), range(W), range(D)):
-                if obs_batch[b, dx, dy, dz] == -1:  # hidden tile
-                    # neighbors
-                    x0, x1 = max(dx-1,0), min(dx+2,H)
-                    y0, y1 = max(dy-1,0), min(dy+2,W)
-                    z0, z1 = max(dz-1,0), min(dz+2,D)
-                    revealed = obs_batch[b, x0:x1, y0:y1, z0:z1] >= 0
-                    prior[b, dx, dy, dz] = np.sum(revealed) / max(np.prod([x1-x0, y1-y0, z1-z0])-1, 1)
-
-        prior = np.transpose(prior, (0,3,1,2))  # (B,D,H,W)
-
-        x = np.stack([x, prior], axis=1)  # (B,2,D,H,W)
-        return torch.from_numpy(x).to(self.device)
+        # (B,H,W,D) -> (B,D,H,W)
+        x = np.transpose(x, (0, 3, 1, 2))
+        x = torch.from_numpy(x).unsqueeze(1)  # (B,1,D,H,W)
+        return x.to(self.device)
 
     # -------------------------
     # Single obs action

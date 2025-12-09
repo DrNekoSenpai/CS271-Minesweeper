@@ -74,8 +74,7 @@ def main(size:int, mines:int, num_steps:int):
     }
 
     if not args.fresh and os.path.exists(load_path): 
-        # start_step = agent.load_checkpoint(load_path)
-        start_step = 0
+        start_step = agent.load_checkpoint(load_path)
         print(f"Loaded checkpoint {load_path} from step {start_step}")
 
         with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
