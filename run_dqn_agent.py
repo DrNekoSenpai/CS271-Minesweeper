@@ -191,7 +191,7 @@ def save_win_frames(
     except Exception:
         pass
 
-    print(f"Saved winning 3D frames to: {out_dir}")
+    print(f"Saved winning 3D frames to: {out_dir}, total frames: {frame_idx}")
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -246,7 +246,7 @@ def main(size:int, mines:int):
     wins = 0
     losses = 0
     saved = 0
-    max_saves = 1
+    max_saves = 1 if (size, mines) != (5, 10) else 5  # Save up to 5 wins for (5,10), else just 1
 
     print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
 
