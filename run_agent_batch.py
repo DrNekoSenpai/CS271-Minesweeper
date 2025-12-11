@@ -1,10 +1,11 @@
 import importlib
 import os
 import numpy as np
+import time
 from backend.environment import MinesweeperEnv
 
 # ========== CONFIG ==========
-AGENT_NAME = "bayesian_approximation_agent" # Name of agent to run
+AGENT_NAME = "random_agent" # Name of agent to run
 NUM_EPISODES = 5000         # Number of episodes to run
 SIZE = 5                    # Size of the Minesweeper grid (height, width, depth)
 NUM_MINES = 10              # Number of mines in the grid
@@ -74,6 +75,8 @@ def main():
 
     print(f"Running {NUM_EPISODES} episodes with agent '{AGENT_NAME}'...\n")
 
+    start_time = time.time()     # <-- NEW: start timer
+
     for i in range(NUM_EPISODES):
         result = run_episode(env, agent)
 
@@ -88,6 +91,10 @@ def main():
         if (i + 1) % 100 == 0:
             print(f"  Completed {i + 1}/{NUM_EPISODES}")
 
+    end_time = time.time()       # <-- NEW: stop timer
+    total_time = end_time - start_time
+    avg_time = total_time / NUM_EPISODES
+
     # ---------- SUMMARY ----------
     summarize(rewards, "Total Reward")
     summarize(moves, "Number of Moves")
@@ -96,6 +103,12 @@ def main():
     print(f"  Wins   = {wins}")
     print(f"  Losses = {losses}")
     print(f"  Win rate = {wins / NUM_EPISODES:.3f}")
+
+    # ---------- TIMING SUMMARY ----------
+    print("\nTiming:")
+    print(f"  Total time   = {total_time:.2f} seconds")
+    print(f"  Avg per ep   = {avg_time:.4f} seconds")
+    print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
 
 
 if __name__ == "__main__":
