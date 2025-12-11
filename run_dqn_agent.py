@@ -24,7 +24,7 @@ import torch
 
 from backend.environment import MinesweeperEnv
 from agents.dueling_cnn_agent import DuelingDCNNAgent
-from tqdm import tqdm
+# from tqdm import tqdm
 
 def summarize(values, name):
     values = np.array(values, dtype=np.float32)
@@ -100,8 +100,8 @@ def select_action_greedy(agent: DuelingDCNNAgent, obs: np.ndarray) -> int:
 
         return int(torch.argmax(q_masked).item())
 
-def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = False):
-    obs, _ = env.reset()
+def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = False, seed: int | None = None):
+    obs, _ = env.reset(seed=seed)
     done = False
 
     total_reward = 0.0
@@ -118,7 +118,6 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
         total_reward += reward
         total_moves += 1
 
-        # Same win/loss logic as run_agent_batch:
         # any negative reward implies a mine hit / loss path.
         if reward < 0:
             won = False
@@ -128,8 +127,46 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
     return {
         "reward": total_reward,
         "moves": total_moves,
-        "won": won
+        "won": won,
+        "seed": seed,
     }
+
+def save_win_frames(size: int, mines: int, agent: DuelingDCNNAgent, seed: int, out_root: str):
+    # Unique folder per saved win
+    out_dir = os.path.join(out_root, f"s{size}_m{mines}_seed{seed}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    env3d = MinesweeperEnv(
+        height=size, width=size, depth=size,
+        num_mines=mines,
+        render_mode="3d"
+    )
+
+    obs, _ = env3d.reset(seed=seed)
+
+    t = 0
+    done = False
+
+    # Capture initial state
+    env3d.render_frame(os.path.join(out_dir, f"frame_{t:04d}.png"), off_screen=True)
+
+    while not done:
+        action = select_action_greedy(agent, obs)
+        obs, reward, terminated, truncated, info = env3d.step(action)
+
+        t += 1
+        env3d.render_frame(os.path.join(out_dir, f"frame_{t:04d}.png"), off_screen=True)
+
+        done = terminated or truncated
+
+    # Best-effort cleanup
+    try:
+        if env3d._plotter is not None:
+            env3d._plotter.close()
+    except Exception:
+        pass
+
+    print(f"Saved winning 3D frames to: {out_dir}")
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -138,10 +175,19 @@ def parse_args():
     p.add_argument("--device", type=str, default=None, help="cpu or cuda (defaults to agent auto-choice)")
     return p.parse_args()
 
-
 def main(size:int, mines:int):
+    # Delete all previous win_frames output with the matching size/mines
+    # i.e. win_frames/s4_m5_seed12345
+
+    out_root = "./win_frames"
+    if os.path.exists(out_root):
+        import shutil 
+        for entry in os.listdir(out_root):
+            if entry.startswith(f"s{size}_m{mines}_"):
+                shutil.rmtree(os.path.join(out_root, entry))
+
     args = parse_args()
-    render_mode = "ansi" if args.render else None
+    render_mode = "3d" if args.render else None
 
     env = MinesweeperEnv(
         height=size,
@@ -167,24 +213,33 @@ def main(size:int, mines:int):
     if loaded:
         print(f"Loaded model from {load_path}")
     else:
-        print(f"WARNING: Could not load model from {load_path}. "
-              f"Running with untrained/random-initialized weights.")
+        print(f"WARNING: Could not load model from {load_path}. ")
+        exit(1)
 
     rewards = []
     moves = []
     wins = 0
     losses = 0
+    saved = 0
+    max_saves = 3
 
     print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
 
-    for i in tqdm(range(args.episodes)):
-        result = run_episode(env, agent, render=args.render)
+    for i in range(args.episodes):
+        seed = int(np.random.randint(0, 2**31-1))
+        result = run_episode(env, agent, render=args.render, seed=seed)
 
         rewards.append(result["reward"])
         moves.append(result["moves"])
 
         if result["won"]:
             wins += 1
+
+            if saved < max_saves and result["moves"] > 25: 
+                save_win_frames(size, mines, agent, seed, "./win_frames")
+                saved += 1
+            elif saved >= max_saves: 
+                break
         else:
             losses += 1
 
@@ -200,5 +255,3 @@ def main(size:int, mines:int):
 if __name__ == "__main__":
     main(4, 5)
     main(5, 5)
-    main(5, 8)
-    main(5, 10)

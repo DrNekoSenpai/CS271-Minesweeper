@@ -27,8 +27,23 @@ class MinesweeperEnv(gym.Env):
         self.action_space = spaces.Discrete(self.height * self.width * self.depth)
 
         # PyVista-related
-        self._plotter = None 
+        self._plotter = None
         self._first_render = True
+        self._plotter_off_screen = False
+
+    def _init_plotter(self, off_screen: bool = False):
+        import pyvista as pv
+        self._plotter = pv.Plotter(off_screen=off_screen, window_size=(1920, 1080))
+        self._plotter_off_screen = off_screen
+        self._first_render = True
+
+        self._plotter.add_axes()
+        self._plotter.enable_eye_dome_lighting()
+        self._plotter.set_background("black")
+        
+        # NEW: stable isometric camera for nicer video
+        # self._plotter.camera_position = "iso"
+        # self._plotter.camera.zoom(1.1)
         
     def _decode_action(self, action): 
         z, rem = divmod(action, self.height * self.width)
@@ -150,44 +165,74 @@ class MinesweeperEnv(gym.Env):
 
         return "\n".join(out)
     
-    def _render_pyvista(self):
+    def set_camera_variant(self, variant: str = "off_x"):
+        """
+        Choose one of a few off-axis camera angles so we're not
+        looking straight at a face or directly at a corner.
+
+        Must be called AFTER the PyVista plotter is created
+        (i.e. after the first _render_pyvista()).
+        """
+        if self._plotter is None:
+            # nothing to do yet
+            return
+
+        H, W, D = self.height, self.width, self.depth
+        cx, cy, cz = (H - 1) / 2.0, (W - 1) / 2.0, (D - 1) / 2.0
+        center = np.array([cx, cy, cz], dtype=float)
+
+        # Distance of the camera from the center
+        size = float(max(H, W, D))
+        radius = size * 3.0
+
+        if variant == "off_x":
+            # biased toward +X, slightly above and forward
+            pos = center + np.array([radius, 0.4 * radius, 0.9 * radius])
+        elif variant == "off_y":
+            # biased toward +Y
+            pos = center + np.array([-0.5 * radius, radius, 0.8 * radius])
+        elif variant == "off_z":
+            # biased toward +Z
+            pos = center + np.array([0.4 * radius, -0.7 * radius, radius])
+        else:
+            # fallback: slightly off from classic "iso"
+            pos = center + np.array([radius, 0.8 * radius, 0.9 * radius])
+
+        # Look at the center of the cube, with +Z roughly "up"
+        self._plotter.camera_position = (tuple(pos), tuple(center), (0.0, 0.0, 1.0))
+
+    def _render_pyvista(self, off_screen: bool = False):
         import pyvista as pv
-        from itertools import product
-
         obs = self.game.get_observation()
-        H, W, D = obs.shape
+        height, width, depth = obs.shape
 
-        # Lazy init plotter
-        if getattr(self, "_plotter", None) is None:
-            self._plotter = pv.Plotter(window_size=(1280, 720))
-            self._plotter.set_background("black")
-            self._plotter.enable_eye_dome_lighting()
-            self._plotter.add_axes()
+        # Lazy init plotter (re-init if off_screen mode changes)
+        if self._plotter is None or self._plotter_off_screen != off_screen:
+            self._init_plotter(off_screen=off_screen)
 
-            # Stable camera for video (isometric-style)
-            # You can also set a custom position tuple if you prefer.
-            self._plotter.camera_position = "iso"
-            self._plotter.camera.zoom(1.1)
-
-            self._first_render = True
-
-        # Remove previous actors while preserving camera
+        # Clear previous actors
         self._plotter.clear()
 
-        cube_size = 1.0
-        half = cube_size / 2.0
+        cube_size = 1.0 
+        half = cube_size / 2.0 
 
-        # Collect points by type
-        unrevealed_pts = []
-        number_pts = []
-        number_labels = []
-        mine_pts = []
+        # NEW: color map for numbers
+        number_colors = {
+            1: "dodgerblue",   # 1
+            2: "limegreen",    # 2
+            3: "yellow",       # 3
+            4: "orange",       # 4
+            5: "red",          # 5
+            "6+": "magenta",   # 6 and above
+        }
 
-        # Use obs dimensions, not self.height/width/depth just in case
-        for x, y, z in product(range(H), range(W), range(D)):
+        # NEW: store points/labels per value bucket
+        number_points_by_v = {k: [] for k in number_colors.keys()}
+        number_labels_by_v = {k: [] for k in number_colors.keys()}
+
+        for x, y, z in product(range(self.height), range(self.width), range(self.depth)):
             v = obs[x, y, z]
 
-            # World coords
             wx = x * cube_size
             wy = y * cube_size
             wz = z * cube_size
@@ -196,81 +241,91 @@ class MinesweeperEnv(gym.Env):
             if v == -2:
                 continue
 
-            # Exposed but unrevealed
+            # Exposed but unrevealed tiles are grey translucent cubes
             if v == -1:
-                unrevealed_pts.append([wx, wy, wz])
+                cube = pv.Cube(center=(wx, wy, wz), x_length=cube_size, y_length=cube_size, z_length=cube_size)
+                self._plotter.add_mesh(cube, color="gray", opacity=0.2)
                 continue
 
-            # Revealed mine
+            # Revealed mines are red spheres
             if v == -10:
-                mine_pts.append([wx, wy, wz])
+                sphere = pv.Sphere(radius=half * 0.7, center=(wx, wy, wz))
+                self._plotter.add_mesh(sphere, color="red")
+
+            # Tiles adjacent to mines (numbers), color-coded by value
+            if v > 0: 
+                bucket = v if v <= 5 else "6+"
+                color = number_colors[bucket]
+
+                cube = pv.Cube(
+                    center=(wx, wy, wz),
+                    x_length=cube_size,
+                    y_length=cube_size,
+                    z_length=cube_size,
+                )
+                # CHANGED: faint cube in per-number color
+                self._plotter.add_mesh(cube, color=color, opacity=0)
+
+                number_points_by_v[bucket].append([wx, wy, wz])
+                number_labels_by_v[bucket].append(str(v))
                 continue
 
-            # Revealed number
-            if v > 0:
-                number_pts.append([wx, wy, wz])
-                number_labels.append(str(v))
+        # NEW: add labels per bucket, with matching colors
+        for bucket, pts_list in number_points_by_v.items():
+            if not pts_list:
                 continue
 
-            # v == 0: you can choose to show or hide
-            # For visual cleanliness, we hide zeros.
+            pts = pv.PolyData(pts_list)
+            labels = number_labels_by_v[bucket]
+            color = number_colors[bucket]
 
-        # ---------- Draw unrevealed cubes (glyphs) ----------
-        if unrevealed_pts:
-            pts = pv.PolyData(unrevealed_pts)
-            cube = pv.Cube(x_length=cube_size, y_length=cube_size, z_length=cube_size)
-            cubes = pts.glyph(geom=cube, scale=False)
-            self._plotter.add_mesh(cubes, color="gray", opacity=0.22)
-
-        # ---------- Draw numbered cubes (faint) ----------
-        if number_pts:
-            pts = pv.PolyData(number_pts)
-            cube = pv.Cube(x_length=cube_size, y_length=cube_size, z_length=cube_size)
-            cubes = pts.glyph(geom=cube, scale=False)
-            self._plotter.add_mesh(cubes, color="white", opacity=0.08)
-
-            # Labels
             self._plotter.add_point_labels(
                 pts,
-                number_labels,
-                font_size=16,
-                text_color="white",
+                labels,
+                font_size=32,
+                text_color=color,
                 point_size=0,
                 shape=None,
-                always_visible=True
+                always_visible=True,
             )
 
-        # ---------- Draw mines as spheres ----------
-        if mine_pts:
-            pts = pv.PolyData(mine_pts)
-            sphere = pv.Sphere(radius=half * 0.7)
-            spheres = pts.glyph(geom=sphere, scale=False)
-            self._plotter.add_mesh(spheres, color="red")
-
-        # ---------- Outline bounding box ----------
+        # Wireframe bounding box
         bounds = (
-            -half, (H - 0.5) * cube_size,
-            -half, (W - 0.5) * cube_size,
-            -half, (D - 0.5) * cube_size,
+            -half, (height - 0.5) * cube_size,
+            -half, (width - 0.5) * cube_size,
+            -half, (depth - 0.5) * cube_size,
         )
         outline = pv.Cube(bounds=bounds)
         self._plotter.add_mesh(outline, style="wireframe", color="cyan", opacity=0.3)
 
         # Show / update
-        if getattr(self, "_first_render", True):
-            self._first_render = False
-            self._plotter.show(auto_close=False)
+        if off_screen: self._plotter.render()
         else:
-            self._plotter.render()
+            if getattr(self, "_first_render", True):
+                self._first_render = False
+                self._plotter.show(auto_close=False)
+            else:
+                self._plotter.render()
 
         return None
-    
-    def render(self): 
+
+    def render_frame(self, path: str, off_screen: bool = True):
         """
-        Function that calls the corresponding render function. Currently only supports ANSI, but will in the future support 3D visualization using pyvista.
+        Render a single 3D frame and optionally save to disk.
         """
+        # Force 3D render logic
+        self._render_pyvista(off_screen=off_screen)
+
+        if path and self._plotter is not None:
+            # PyVista will infer format from extension (.png recommended)
+            self._plotter.screenshot(path)
+
+        return None
+
+    # --- update render() to call the new signature safely ---
+    def render(self):
         if self.render_mode == "ansi": return self._render_ansi()
-        elif self.render_mode == "3d": return self._render_pyvista()
+        elif self.render_mode == "3d": return self._render_pyvista(off_screen=False)
     
 if __name__ == "__main__": 
     print("This module is not meant to be run on its own! Please use ./run_agent.py instead.")
