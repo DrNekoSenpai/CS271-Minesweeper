@@ -1,0 +1,17 @@
+       environment      model  Number of Moves - mean  Timing - Avg per ep  Number of Moves - stdev  Total Reward - stdev  Win / Loss - Win rate  Total Reward - mean
+0    metrics/s4-m5     Random                    6.95               0.0016                     4.76                 17.70                  0.000               -68.27
+1    metrics/s4-m5  Heuristic                    9.19               0.0026                     4.96                 19.29                  0.000               -65.28
+2    metrics/s4-m5   Bayesian                   17.25               0.0345                     9.78                111.23                  0.442                34.73
+3    metrics/s4-m5        DQN                   11.21               0.0384                     8.11                 46.15                  0.034               -58.79
+12  metrics/s5-m10     Random                    8.13               0.0033                     5.84                 31.05                  0.000               -50.25
+13  metrics/s5-m10  Heuristic                   14.61               0.0066                     8.49                 36.06                  0.000               -40.25
+14  metrics/s5-m10   Bayesian                   26.30               0.0922                    16.74                 88.31                  0.126                 4.62
+15  metrics/s5-m10        DQN                    9.32               0.0567                     6.91                 35.15                  0.000               -52.38
+4    metrics/s5-m5     Random                    7.79               0.0035                     4.69                 29.31                  0.001                -5.66
+5    metrics/s5-m5  Heuristic                   12.51               0.0082                     7.12                 31.49                  0.003                 2.21
+6    metrics/s5-m5   Bayesian                   19.54               0.0432                     9.48                109.79                  0.662               142.85
+7    metrics/s5-m5        DQN                   14.98               0.0870                     8.34                 61.00                  0.062                14.51
+8    metrics/s5-m8     Random                    8.29               0.0033                     5.80                 32.57                  0.000               -34.48
+9    metrics/s5-m8  Heuristic                   14.96               0.0073                     8.16                 36.02                  0.000               -22.51
+10   metrics/s5-m8   Bayesian                   26.01               0.0802                    14.11                108.46                  0.272                48.39
+11   metrics/s5-m8        DQN                    9.17               0.0521                     6.62                 34.54                  0.000               -35.93
