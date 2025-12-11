@@ -131,31 +131,56 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
         "seed": seed,
     }
 
-def save_win_frames(size: int, mines: int, agent: DuelingDCNNAgent, seed: int, out_root: str):
+def animate_camera(env: MinesweeperEnv, frame_idx: int, num_frames:int):
+    plotter = getattr(env, "_plotter", None)
+    if plotter is None:
+        return  # plotter not created yet
+
+    step_deg = 0.25
+    plotter.camera.azimuth += step_deg
+
+def save_win_frames(
+    size: int,
+    mines: int,
+    agent: DuelingDCNNAgent,
+    seed: int,
+    out_root: str,
+    num_frames: int,
+    frames_per_step: int = 5,
+):
     # Unique folder per saved win
     out_dir = os.path.join(out_root, f"s{size}_m{mines}_seed{seed}")
     os.makedirs(out_dir, exist_ok=True)
 
     env3d = MinesweeperEnv(
-        height=size, width=size, depth=size,
+        height=size,
+        width=size,
+        depth=size,
         num_mines=mines,
-        render_mode="3d"
+        render_mode="3d",
     )
 
     obs, _ = env3d.reset(seed=seed)
 
-    t = 0
     done = False
+    frame_idx = 0  # <--- NEW: global frame counter over the whole episode
 
-    # Capture initial state
-    env3d.render_frame(os.path.join(out_dir, f"frame_{t:04d}.png"), off_screen=True)
+    # Capture initial state (before any move)
+    env3d.render_frame(os.path.join(out_dir, f"frame_{frame_idx:04d}.png"), off_screen=True)
+    frame_idx += 1
 
     while not done:
         action = select_action_greedy(agent, obs)
         obs, reward, terminated, truncated, info = env3d.step(action)
 
-        t += 1
-        env3d.render_frame(os.path.join(out_dir, f"frame_{t:04d}.png"), off_screen=True)
+        # For smoother playback, emit multiple frames for this single logical step
+        for _ in range(frames_per_step):
+            animate_camera(env3d, frame_idx, num_frames)
+            env3d.render_frame(
+                os.path.join(out_dir, f"frame_{frame_idx:04d}.png"),
+                off_screen=True,
+            )
+            frame_idx += 1
 
         done = terminated or truncated
 
@@ -221,7 +246,7 @@ def main(size:int, mines:int):
     wins = 0
     losses = 0
     saved = 0
-    max_saves = 3
+    max_saves = 1
 
     print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
 
@@ -235,13 +260,20 @@ def main(size:int, mines:int):
         if result["won"]:
             wins += 1
 
-            if saved < max_saves and result["moves"] > 25: 
-                save_win_frames(size, mines, agent, seed, "./win_frames")
+            if saved < max_saves and result["moves"] >= 30: 
+                save_win_frames(size, mines, agent, seed, "./win_frames", result["moves"])
                 saved += 1
             elif saved >= max_saves: 
                 break
         else:
             losses += 1
+
+            # Save 5 size and 10 mines as a visualization for project video, even though loss 
+            if (size == 5 and mines == 10) and (saved < max_saves and result["moves"] >= 30):
+                save_win_frames(size, mines, agent, seed, "./win_frames", result["moves"])
+                saved += 1
+            elif saved >= max_saves:
+                break
 
     # ---------- SUMMARY ----------
     summarize(rewards, "Total Reward")
@@ -253,5 +285,4 @@ def main(size:int, mines:int):
     print(f"  Win rate = {wins / args.episodes:.3f}")
 
 if __name__ == "__main__":
-    main(4, 5)
-    main(5, 5)
+    main(5, 10)

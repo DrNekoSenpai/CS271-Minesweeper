@@ -40,10 +40,7 @@ class MinesweeperEnv(gym.Env):
         self._plotter.add_axes()
         self._plotter.enable_eye_dome_lighting()
         self._plotter.set_background("black")
-        
-        # NEW: stable isometric camera for nicer video
         # self._plotter.camera_position = "iso"
-        # self._plotter.camera.zoom(1.1)
         
     def _decode_action(self, action): 
         z, rem = divmod(action, self.height * self.width)
@@ -164,42 +161,6 @@ class MinesweeperEnv(gym.Env):
             out.append("")
 
         return "\n".join(out)
-    
-    def set_camera_variant(self, variant: str = "off_x"):
-        """
-        Choose one of a few off-axis camera angles so we're not
-        looking straight at a face or directly at a corner.
-
-        Must be called AFTER the PyVista plotter is created
-        (i.e. after the first _render_pyvista()).
-        """
-        if self._plotter is None:
-            # nothing to do yet
-            return
-
-        H, W, D = self.height, self.width, self.depth
-        cx, cy, cz = (H - 1) / 2.0, (W - 1) / 2.0, (D - 1) / 2.0
-        center = np.array([cx, cy, cz], dtype=float)
-
-        # Distance of the camera from the center
-        size = float(max(H, W, D))
-        radius = size * 3.0
-
-        if variant == "off_x":
-            # biased toward +X, slightly above and forward
-            pos = center + np.array([radius, 0.4 * radius, 0.9 * radius])
-        elif variant == "off_y":
-            # biased toward +Y
-            pos = center + np.array([-0.5 * radius, radius, 0.8 * radius])
-        elif variant == "off_z":
-            # biased toward +Z
-            pos = center + np.array([0.4 * radius, -0.7 * radius, radius])
-        else:
-            # fallback: slightly off from classic "iso"
-            pos = center + np.array([radius, 0.8 * radius, 0.9 * radius])
-
-        # Look at the center of the cube, with +Z roughly "up"
-        self._plotter.camera_position = (tuple(pos), tuple(center), (0.0, 0.0, 1.0))
 
     def _render_pyvista(self, off_screen: bool = False):
         import pyvista as pv
