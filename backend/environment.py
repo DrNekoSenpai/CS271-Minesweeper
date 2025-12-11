@@ -1,13 +1,8 @@
 import gymnasium as gym 
-from gymnasium import spaces 
 import numpy as np 
+from gymnasium import spaces 
 from backend.minesweeper import Minesweeper
 from itertools import product
-
-# -- todo -- NOT AS IMPORTANT FOR NOW
-# 3D rendering? although i dont know if this is required for the final report
-# as long as we can guarantee the correctness of the gamestate at each turn
-# it might be easier to just write unit testing for this.
 
 class MinesweeperEnv(gym.Env): 
     metadata = {"render_modes": ["ansi", "3d"], "render-fps": 4}
