@@ -1,31 +1,7 @@
-"""
-Batch-evaluate a trained Dueling Double-DQN 3D CNN Minesweeper agent.
-
-This rewrite intentionally matches the output/print structure of
-run_agent_batch.py:
-  - progress update every 100 episodes
-  - summary blocks with min/max/mean/median/var
-  - Win / Loss counts and win rate
-
-The loader supports:
-  1) Training checkpoints saved via DuelingDCNNAgent.save_checkpoint
-     (expects key: "online_state")
-  2) A raw state_dict (if you later save inference-only weights)
-
-Usage:
-  python play_dqn.py --model checkpoint_step_50000.pth --episodes 1000
-  python play_dqn.py --model dueling_cnn.pt --episodes 200 --render
-"""
-
-import argparse
-import os
-import numpy as np
-import time
-import torch
-
+import argparse, os, time, torch, numpy as np
 from backend.environment import MinesweeperEnv
 from agents.dueling_cnn_agent import DuelingDCNNAgent
-# from tqdm import tqdm
+from tqdm import tqdm
 
 def summarize(values, name):
     values = np.array(values, dtype=np.float32)
@@ -134,8 +110,7 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
 
 def animate_camera(env: MinesweeperEnv, frame_idx: int, num_frames:int):
     plotter = getattr(env, "_plotter", None)
-    if plotter is None:
-        return  # plotter not created yet
+    if plotter is None: return
 
     step_deg = 0.25
     plotter.camera.azimuth += step_deg
@@ -186,22 +161,13 @@ def save_win_frames(
         done = terminated or truncated
 
     # Best-effort cleanup
-    try:
-        if env3d._plotter is not None:
-            env3d._plotter.close()
-    except Exception:
-        pass
+    try: env3d._plotter.close()
+    except Exception: pass
 
     print(f"Saved winning 3D frames to: {out_dir}, total frames: {frame_idx}")
 
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--episodes", type=int, default=5000)
-    p.add_argument("--render", action="store_true", help="Print ANSI board each step (keeps batch summary format)")
-    p.add_argument("--device", type=str, default=None, help="cpu or cuda (defaults to agent auto-choice)")
-    return p.parse_args()
 
-def main(size:int, mines:int):
+def main(size:int, mines:int, record_wins:bool=False):
     # Delete all previous win_frames output with the matching size/mines
     # i.e. win_frames/s4_m5_seed12345
 
@@ -212,23 +178,11 @@ def main(size:int, mines:int):
             if entry.startswith(f"s{size}_m{mines}_"):
                 shutil.rmtree(os.path.join(out_root, entry))
 
-    args = parse_args()
-    render_mode = "3d" if args.render else None
+    render_mode = "3d"
+    num_episodes = 5000
 
-    env = MinesweeperEnv(
-        height=size,
-        width=size,
-        depth=size,
-        num_mines=mines,
-        render_mode=render_mode
-    )
-
-    agent = DuelingDCNNAgent(
-        height=size,
-        width=size,
-        depth=size,
-        device=args.device
-    )
+    env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode=render_mode)
+    agent = DuelingDCNNAgent(height=size, width=size, depth=size)
 
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
     checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
@@ -247,15 +201,15 @@ def main(size:int, mines:int):
     wins = 0
     losses = 0
     saved = 0
-    max_saves = 1 if (size, mines) != (5, 10) else 5  # Save up to 5 wins for (5,10), else just 1
+    max_saves = 1  # Save up to 5 wins for (5,10), else just 1
 
-    print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
+    print(f"\nRunning {num_episodes} episodes with agent '{AGENT_NAME}'...")
 
     start_time = time.time()
 
-    for i in range(args.episodes):
+    for i in tqdm(range(num_episodes)):
         seed = int(np.random.randint(0, 2**31-1))
-        result = run_episode(env, agent, render=args.render, seed=seed)
+        result = run_episode(env, agent, render=render_mode, seed=seed)
 
         rewards.append(result["reward"])
         moves.append(result["moves"])
@@ -268,39 +222,42 @@ def main(size:int, mines:int):
                 saved += 1
             elif saved >= max_saves:
                 break
+
         else:
             losses += 1
 
-            if (size == 5 and mines == 10) and (saved < max_saves and result["moves"] >= 30):
+    # Special case: no wins, we still need to output a loss
+    if wins == 0:
+        print(f"No wins recorded, running episodes to capture losses...")
+        for i in range(num_episodes):
+            seed = int(np.random.randint(0, 2**31-1))
+            result = run_episode(env, agent, render=render_mode, seed=seed)
+
+            if saved < max_saves and result["moves"] >= 30:
                 save_win_frames(size, mines, agent, seed, "./win_frames", result["moves"])
                 saved += 1
+
             elif saved >= max_saves:
                 break
-
-        # Progress print every 100 episodes
-        if (i + 1) % 100 == 0:
-            print(f"  Completed {i + 1}/{args.episodes}")
 
     end_time = time.time()
     total_time = end_time - start_time
     avg_time = total_time / max(1, wins + losses)
 
-    # ---------- SUMMARY ----------
-    summarize(rewards, "Total Reward")
-    summarize(moves, "Number of Moves")
+    if not record_wins: 
+        # ---------- SUMMARY ----------
+        summarize(rewards, "Total Reward")
+        summarize(moves, "Number of Moves")
 
-    print("\nWin / Loss:")
-    print(f"  Wins   = {wins}")
-    print(f"  Losses = {losses}")
-    print(f"  Win rate = {wins / args.episodes:.3f}")
+        print("\nWin / Loss:")
+        print(f"  Wins   = {wins}")
+        print(f"  Losses = {losses}")
+        print(f"  Win rate = {wins / num_episodes:.3f}")
 
-    print("\nTiming:")
-    print(f"  Total time   = {total_time:.2f} seconds")
-    print(f"  Avg per ep   = {avg_time:.4f} seconds")
-    print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
+        print("\nTiming:")
+        print(f"  Total time   = {total_time:.2f} seconds")
+        print(f"  Avg per ep   = {avg_time:.4f} seconds")
+        print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
 
 if __name__ == "__main__":
-    main(4, 5)
-    main(5, 5)
     main(5, 8)
-    main(5, 10)

@@ -1,15 +1,6 @@
-import importlib
-import os
-import numpy as np
-import time
+import importlib, numpy as np, time, os
 from backend.environment import MinesweeperEnv
-
-# ========== CONFIG ==========
-AGENT_NAME = "random_agent" # Name of agent to run
-NUM_EPISODES = 5000         # Number of episodes to run
-SIZE = 5                    # Size of the Minesweeper grid (height, width, depth)
-NUM_MINES = 10              # Number of mines in the grid
-# ============================
+from tqdm import tqdm
 
 def load_agent(agent_name, action_space):
     try:
@@ -46,6 +37,41 @@ def run_episode(env, agent):
         "won": won
     }
 
+def animate_camera(env, frame_idx, num_frames):
+    plotter = getattr(env, "_plotter", None)
+    if plotter is None: return
+
+    step_deg = 0.25
+    plotter.camera.azimuth += step_deg
+
+def save_win_frames(size:int, mines:int, seed:int, out_root, num_frames:int, frames_per_step:int=5, agent:object=None, agent_name:str=""): 
+    out_dir = os.path.join(out_root, f"s{size}_m{mines}_agent_{agent_name}_seed{seed}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    env3d = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode="3d")
+    obs, _ = env3d.reset(seed=seed)
+
+    done = False
+    frame_idx = 0
+
+    env3d.render_frame(os.path.join(out_dir, f"frame_{frame_idx:04d}.png"), off_screen=True)
+    frame_idx += 1
+
+    while not done:
+        action = agent.select_action(obs)
+        obs, reward, terminated, truncated, info = env3d.step(action)
+
+        for _ in range(frames_per_step):
+            animate_camera(env3d, frame_idx, num_frames)
+            env3d.render_frame(os.path.join(out_dir, f"frame_{frame_idx:04d}.png"), off_screen=True)
+            frame_idx += 1
+
+        done = terminated or truncated
+
+    try: env3d.close()
+    except Exception: pass
+
+    print(f"Saved winning 3D frames to: {out_dir}, total frames: {frame_idx}")
 
 def summarize(values, name):
     values = np.array(values)
@@ -57,27 +83,32 @@ def summarize(values, name):
     print(f"  var     = {values.var():.2f}")
     print(f"  stdev   = {values.std():.2f}")
 
-def main():
+def main(size:int, num_mines:int, agent_name:str, record_wins:bool=False):
+    num_episodes = 5000
+    
     env = MinesweeperEnv(
-        height=SIZE,
-        width=SIZE,
-        depth=SIZE,
-        num_mines=NUM_MINES,
+        height=size,
+        width=size,
+        depth=size,
+        num_mines=num_mines,
         render_mode=None
     )
 
-    agent = load_agent(AGENT_NAME, env.action_space)
+    agent = load_agent(agent_name, env.action_space)
 
     rewards = []
     moves = []
     wins = 0
     losses = 0
+    saved = 0
+    max_saves = 1
 
-    print(f"Running {NUM_EPISODES} episodes with agent '{AGENT_NAME}'...\n")
+    print(f"Running {num_episodes} episodes with agent '{agent_name}'...\n")
 
     start_time = time.time()     # <-- NEW: start timer
 
-    for i in range(NUM_EPISODES):
+    for i in tqdm(range(num_episodes)):
+        seed = int(np.random.randint(0, 2**31-1))
         result = run_episode(env, agent)
 
         rewards.append(result["reward"])
@@ -85,31 +116,47 @@ def main():
 
         if result["won"]:
             wins += 1
+            if record_wins: 
+                if saved < max_saves and record_wins and result["moves"] >= 30:
+                    save_win_frames(size, num_mines, seed, "win_frames", result["moves"], agent=agent, agent_name=agent_name) 
+                    saved += 1
+                elif saved >= max_saves: break
         else:
             losses += 1
+    
+    # Special case: no wins, we still need to output a loss 
+    if wins == 0:
+        print(f"No wins recorded, running episodes to capture losses...")
+        for i in range(num_episodes): 
+            seed = int(np.random.randint(0, 2**31-1))
+            result = run_episode(env, agent)
 
-        if (i + 1) % 100 == 0:
-            print(f"  Completed {i + 1}/{NUM_EPISODES}")
+            if saved < max_saves and result["moves"] >= 30:
+                save_win_frames(size, num_mines, seed, "win_frames", result["moves"], agent=agent, agent_name=agent_name) 
+                saved += 1
+
+            elif saved >= max_saves: break
 
     end_time = time.time()       # <-- NEW: stop timer
     total_time = end_time - start_time
-    avg_time = total_time / NUM_EPISODES
+    avg_time = total_time / num_episodes
 
-    # ---------- SUMMARY ----------
-    summarize(rewards, "Total Reward")
-    summarize(moves, "Number of Moves")
+    if not record_wins: 
+        # ---------- SUMMARY ----------
+        summarize(rewards, "Total Reward")
+        summarize(moves, "Number of Moves")
 
-    print("\nWin / Loss:")
-    print(f"  Wins   = {wins}")
-    print(f"  Losses = {losses}")
-    print(f"  Win rate = {wins / NUM_EPISODES:.3f}")
+        print("\nWin / Loss:")
+        print(f"  Wins   = {wins}")
+        print(f"  Losses = {losses}")
+        print(f"  Win rate = {wins / num_episodes:.3f}")
 
-    # ---------- TIMING SUMMARY ----------
-    print("\nTiming:")
-    print(f"  Total time   = {total_time:.2f} seconds")
-    print(f"  Avg per ep   = {avg_time:.4f} seconds")
-    print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
-
+        # ---------- TIMING SUMMARY ----------
+        print("\nTiming:")
+        print(f"  Total time   = {total_time:.2f} seconds")
+        print(f"  Avg per ep   = {avg_time:.4f} seconds")
+        print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
 
 if __name__ == "__main__":
-    main()
+    main(5, 10, "heuristic_agent", True)
+    main(5, 10, "bayesian_approximation_agent", True)
