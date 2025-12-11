@@ -20,6 +20,7 @@ Usage:
 import argparse
 import os
 import numpy as np
+import time
 import torch
 
 from backend.environment import MinesweeperEnv
@@ -250,6 +251,8 @@ def main(size:int, mines:int):
 
     print(f"\nRunning {args.episodes} episodes with agent '{AGENT_NAME}'...")
 
+    start_time = time.time()
+
     for i in range(args.episodes):
         seed = int(np.random.randint(0, 2**31-1))
         result = run_episode(env, agent, render=args.render, seed=seed)
@@ -260,20 +263,27 @@ def main(size:int, mines:int):
         if result["won"]:
             wins += 1
 
-            if saved < max_saves and result["moves"] >= 30: 
+            if saved < max_saves and result["moves"] >= 30:
                 save_win_frames(size, mines, agent, seed, "./win_frames", result["moves"])
                 saved += 1
-            elif saved >= max_saves: 
+            elif saved >= max_saves:
                 break
         else:
             losses += 1
 
-            # Save 5 size and 10 mines as a visualization for project video, even though loss 
             if (size == 5 and mines == 10) and (saved < max_saves and result["moves"] >= 30):
                 save_win_frames(size, mines, agent, seed, "./win_frames", result["moves"])
                 saved += 1
             elif saved >= max_saves:
                 break
+
+        # Progress print every 100 episodes
+        if (i + 1) % 100 == 0:
+            print(f"  Completed {i + 1}/{args.episodes}")
+
+    end_time = time.time()
+    total_time = end_time - start_time
+    avg_time = total_time / max(1, wins + losses)
 
     # ---------- SUMMARY ----------
     summarize(rewards, "Total Reward")
@@ -284,5 +294,13 @@ def main(size:int, mines:int):
     print(f"  Losses = {losses}")
     print(f"  Win rate = {wins / args.episodes:.3f}")
 
+    print("\nTiming:")
+    print(f"  Total time   = {total_time:.2f} seconds")
+    print(f"  Avg per ep   = {avg_time:.4f} seconds")
+    print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
+
 if __name__ == "__main__":
+    main(4, 5)
+    main(5, 5)
+    main(5, 8)
     main(5, 10)
