@@ -10,8 +10,8 @@ def load_agent(agent_name, action_space):
     except (ModuleNotFoundError, AttributeError):
         raise ValueError(f"Agent '{agent_name}' not found in agents/")
 
-def run_episode(env, agent):
-    obs, _ = env.reset()
+def run_episode(env, agent, seed: int | None = None):
+    obs, _ = env.reset(seed=seed)
     done = False
 
     total_reward = 0.0
@@ -45,7 +45,8 @@ def animate_camera(env, frame_idx, num_frames):
     plotter.camera.azimuth += step_deg
 
 def save_win_frames(size:int, mines:int, seed:int, out_root, num_frames:int, frames_per_step:int=5, agent:object=None, agent_name:str=""): 
-    out_dir = os.path.join(out_root, f"s{size}_m{mines}_agent_{agent_name}_seed{seed}")
+    agent_name = agent_name.split("_")[0]
+    out_dir = os.path.join(out_root, f"s{size}_m{mines}_{agent_name}_seed{seed}")
     os.makedirs(out_dir, exist_ok=True)
 
     env3d = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode="3d")
@@ -101,15 +102,15 @@ def main(size:int, num_mines:int, agent_name:str, record_wins:bool=False):
     wins = 0
     losses = 0
     saved = 0
-    max_saves = 1
+    max_saves = 3
 
     print(f"Running {num_episodes} episodes with agent '{agent_name}'...\n")
 
     start_time = time.time()     # <-- NEW: start timer
 
-    for i in tqdm(range(num_episodes)):
+    for i in range(num_episodes): # tqdm(range(num_episodes)):
         seed = int(np.random.randint(0, 2**31-1))
-        result = run_episode(env, agent)
+        result = run_episode(env, agent, seed=seed)
 
         rewards.append(result["reward"])
         moves.append(result["moves"])
@@ -158,5 +159,4 @@ def main(size:int, num_mines:int, agent_name:str, record_wins:bool=False):
         print(f"  Episodes/sec = {1.0 / avg_time:.2f}")
 
 if __name__ == "__main__":
-    main(5, 10, "heuristic_agent", True)
     main(5, 10, "bayesian_approximation_agent", True)

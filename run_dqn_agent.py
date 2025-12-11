@@ -171,13 +171,6 @@ def main(size:int, mines:int, record_wins:bool=False):
     # Delete all previous win_frames output with the matching size/mines
     # i.e. win_frames/s4_m5_seed12345
 
-    out_root = "./win_frames"
-    if os.path.exists(out_root):
-        import shutil 
-        for entry in os.listdir(out_root):
-            if entry.startswith(f"s{size}_m{mines}_"):
-                shutil.rmtree(os.path.join(out_root, entry))
-
     render_mode = "3d"
     num_episodes = 5000
 
