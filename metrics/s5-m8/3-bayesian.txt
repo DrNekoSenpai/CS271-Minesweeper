@@ -1,0 +1,25 @@
+Total Reward:
+  min     = -100.00
+  max     = 216.00
+  mean    = 48.39
+  median  = 11.00
+  var     = 11762.78
+  stdev   = 108.46
+
+Number of Moves:
+  min     = 1.00
+  max     = 78.00
+  mean    = 26.01
+  median  = 27.00
+  var     = 198.96
+  stdev   = 14.11
+
+Win / Loss:
+  Wins   = 1360
+  Losses = 3640
+  Win rate = 0.272
+
+Timing:
+  Total time   = 400.97 seconds
+  Avg per ep   = 0.0802 seconds
+  Episodes/sec = 12.47
