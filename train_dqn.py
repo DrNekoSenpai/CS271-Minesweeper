@@ -102,6 +102,11 @@ def main(size:int, mines:int, num_steps:int):
         "steps": [],
         "loss": [] 
     }
+    
+    wins_dict = {
+        "steps": [],
+        "wins": []
+    }
 
     if not args.fresh and os.path.exists(load_path):
         try:
@@ -116,18 +121,35 @@ def main(size:int, mines:int, num_steps:int):
                 raise
 
     if start_step > 0:
+        print(f"Loading historical metrics from previous training...")
         with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
         
-        metrics_pattern = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
+        # Parse metrics with win rate if available
+        metrics_pattern_with_wins = r"\[step=(\d+)/(\d+)\] reward=(.*) wins=(\d+)/100"
+        metrics_pattern_old = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
+        
         for line in lines: 
-            match = re.search(metrics_pattern, line)
-            if match: 
-                steps, reward, safe_moves, safe_tiles = match.groups()
+            # Try new format first (with wins)
+            match = re.search(metrics_pattern_with_wins, line)
+            if match:
+                steps, _, reward, wins = match.groups()
                 metrics_dict["steps"].append(int(steps))
                 metrics_dict["reward"].append(float(reward))
-                metrics_dict["safe_moves"].append(float(safe_moves))
-                metrics_dict["safe_tiles"].append(float(safe_tiles))
+                wins_dict["steps"].append(int(steps))
+                wins_dict["wins"].append(int(wins))
+            else:
+                # Fall back to old format
+                match = re.search(metrics_pattern_old, line)
+                if match: 
+                    steps, reward, safe_moves, safe_tiles = match.groups()
+                    metrics_dict["steps"].append(int(steps))
+                    metrics_dict["reward"].append(float(reward))
+                    metrics_dict["safe_moves"].append(float(safe_moves))
+                    metrics_dict["safe_tiles"].append(float(safe_tiles))
+        
+        print(f"Loaded {len(metrics_dict['steps'])} historical metric data points")
+        print(f"Loaded {len(wins_dict['steps'])} historical win rate data points")
 
         with open(f"./metrics/s{size}-m{mines}/loss.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
@@ -209,7 +231,7 @@ def main(size:int, mines:int, num_steps:int):
                     
                     print(f"[step={step}/{num_steps}] reward={avg_reward:.1f} wins={wins}/100 | "
                           f"{recent_rate:.1f} steps/s | ETA: {eta_hours:.1f}h")
-                    logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles))
+                    logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles, wins))
 
                 episode_rewards[i] = 0.0
                 episode_safe_moves[i] = 0.0
@@ -227,13 +249,15 @@ def main(size:int, mines:int, num_steps:int):
             print(f"Saved checkpoint: {save_path}")
             with open(f'./metrics/s{size}-m{mines}/metrics.log', 'a', encoding='utf-8') as file: 
                 for l in logs: 
-                    s, reward, safe_moves, safe_tiles = l
-                    file.write(f"[step={s}] reward={reward} safe_moves={safe_moves} safe_tiles={safe_tiles}\n")
+                    s, reward, safe_moves, safe_tiles, wins = l
+                    file.write(f"[step={s}/{num_steps}] reward={reward} wins={wins}/100\n")
 
                     metrics_dict["steps"].append(s)
                     metrics_dict["reward"].append(reward)
                     metrics_dict["safe_moves"].append(safe_moves)
                     metrics_dict["safe_tiles"].append(safe_tiles)
+                    wins_dict["steps"].append(s)
+                    wins_dict["wins"].append(wins)
                     
                 file.write(f"Saved checkpoint: {save_path}\n")
                 logs = []
@@ -297,9 +321,22 @@ def main(size:int, mines:int, num_steps:int):
             plt.grid(True)
             plt.savefig(f"./metrics/s{size}-m{mines}/safe_tiles-{step}.png", dpi=600)
             plt.close()
-            print(f"Saved safe tiles curve to safe_tiles-{step}.png")
-
-            pattern = re.compile(r"(loss|rewards|safe_moves|safe_tiles)-(\d+)\.png")
+            print(f"Saved safe tiles curve to safe_tiles-{step}.png")            
+            
+            plt.figure(figsize=(10, 6))
+            plt.plot(wins_dict["steps"], wins_dict["wins"], label="Win Rate", linestyle="-", color="green")
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+            plt.xlabel("Step")
+            plt.ylabel("Wins (out of 100)")
+            plt.ylim(0, 100)
+            plt.title(f"Win Rate Curve for size={size}, mines={mines}")
+            plt.grid(True)
+            plt.savefig(f"./metrics/s{size}-m{mines}/winrate-{step}.png", dpi=600)
+            plt.close()
+            print(f"Saved win rate curve to winrate-{step}.png")
+            
+            pattern = re.compile(r"(loss|rewards|safe_moves|safe_tiles|winrate)-(\d+)\.png")
             for fname in os.listdir(f"./metrics/s{size}-m{mines}/"): 
                 match = pattern.match(fname)
                 if not match: continue 
