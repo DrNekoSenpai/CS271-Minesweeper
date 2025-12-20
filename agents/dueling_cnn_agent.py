@@ -29,18 +29,21 @@ class Dueling3DCNN(nn.Module):
     """
     Dueling 3D CNN for Minesweeper.
 
-    Assumes input obs is (batch, 1, D, H, W).
+    Assumes input obs is (batch, 3, D, H, W) - now supports multi-channel input.
+    Channel 0: Raw observation
+    Channel 1: Safe neighbors mask (neighbors of zeros)
+    Channel 2: Danger mask (high numbers indicating potential mines)
     Output is Q-values for all actions (flattened voxels).
     """
 
-    def __init__(self, height: int, width: int, depth: int, hidden: int = 512):
+    def __init__(self, height: int, width: int, depth: int, hidden: int = 512, in_channels: int = 3):
         super().__init__()
         self.H, self.W, self.D = height, width, depth
         self.n_actions = height * width * depth
 
-        # Stem
+        # Stem - now accepts 3 channels
         self.stem = nn.Sequential(
-            nn.Conv3d(1, 32, 3, padding=1),
+            nn.Conv3d(in_channels, 32, 3, padding=1),
             nn.GroupNorm(8, 32),
             nn.ReLU(),
         )
@@ -63,7 +66,7 @@ class Dueling3DCNN(nn.Module):
         )
 
         with torch.no_grad():
-            dummy = torch.zeros(1, 1, depth, height, width)
+            dummy = torch.zeros(1, in_channels, depth, height, width)
             f = self._forward_trunk(dummy)
             flat_dim = f.view(1, -1).shape[1]
 
@@ -92,7 +95,7 @@ class Dueling3DCNN(nn.Module):
         return x
 
     def forward(self, x):
-        # x: (B,1,D,H,W)
+        # x: (B,3,D,H,W) - now expects 3 channels
         x = self._forward_trunk(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
@@ -138,7 +141,7 @@ class ReplayBuffer:
 # -------------------------
 class DuelingDCNNAgent:
     """
-    Double DQN + Dueling 3D CNN agent with action masking.
+    Double DQN + Dueling 3D CNN agent with action masking and state augmentation.
 
     Observation convention:
         obs shape = (H, W, D)
@@ -146,6 +149,11 @@ class DuelingDCNNAgent:
 
     Flattened action index convention:
         index = z * H * W + y * W + x
+    
+    New features:
+        - Multi-channel state representation (raw + safe mask + danger mask)
+        - Hybrid action selection (mix DQN with guaranteed safe moves)
+        - Support for imitation learning bootstrap
     """
 
     def __init__(
@@ -178,13 +186,28 @@ class DuelingDCNNAgent:
         self.eps_end = eps_end
         self.eps_decay_steps = eps_decay_steps
         self.total_steps = 0
+        
+        # Hybrid action selection parameters
+        self.use_hybrid = True  # Enable hybrid action selection
+        self.safe_action_prob = 0.3  # 30% chance to use guaranteed safe moves when available
 
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            # Check if CUDA is truly usable (not just available)
+            if torch.cuda.is_available():
+                try:
+                    # Test if CUDA actually works
+                    torch.zeros(1).cuda()
+                    device = "cuda"
+                except RuntimeError:
+                    # CUDA available but not working (e.g., unsupported GPU)
+                    device = "cpu"
+                    print("Warning: CUDA detected but not functional. Using CPU instead.")
+            else:
+                device = "cpu"
         self.device = torch.device(device)
 
-        self.online = Dueling3DCNN(height, width, depth, hidden=512).to(self.device)
-        self.target = Dueling3DCNN(height, width, depth, hidden=512).to(self.device)
+        self.online = Dueling3DCNN(height, width, depth, hidden=512, in_channels=3).to(self.device)
+        self.target = Dueling3DCNN(height, width, depth, hidden=512, in_channels=3).to(self.device)
 
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
@@ -235,30 +258,177 @@ class DuelingDCNNAgent:
         return self.eps_start + frac * (self.eps_end - self.eps_start)
 
     # -------------------------
+    # State Augmentation (#7: Multi-channel representation)
+    # -------------------------
+    def augment_observation(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Augment single observation with domain knowledge channels.
+        
+        Args:
+            obs: (H, W, D) raw observation
+            
+        Returns:
+            augmented: (3, H, W, D) with channels:
+                [0] = raw observation (normalized)
+                [1] = safe neighbors mask (neighbors of zeros)
+                [2] = danger mask (high adjacent mine counts)
+        """
+        H, W, D = obs.shape
+        
+        # Channel 0: Normalized raw observation
+        raw = obs.astype(np.float32) / 26.0
+        
+        # Channel 1: Safe neighbors mask (tiles adjacent to zeros)
+        safe_mask = self._compute_safe_neighbors_mask(obs)
+        
+        # Channel 2: Danger mask (tiles with high numbers nearby)
+        danger_mask = np.zeros_like(obs, dtype=np.float32)
+        danger_mask[(obs > 3) & (obs < 27)] = 1.0  # High numbers indicate danger
+        
+        # Stack channels: (3, H, W, D)
+        augmented = np.stack([raw, safe_mask, danger_mask], axis=0)
+        
+        # Safety check for NaN/Inf
+        if not np.isfinite(augmented).all():
+            print(f"WARNING: Non-finite values in augmented observation!")
+            print(f"Raw range: [{raw.min()}, {raw.max()}]")
+            print(f"Safe mask range: [{safe_mask.min()}, {safe_mask.max()}]")
+            print(f"Danger mask range: [{danger_mask.min()}, {danger_mask.max()}]")
+            augmented = np.nan_to_num(augmented, nan=0.0, posinf=1.0, neginf=-1.0)
+        
+        return augmented
+    
+    def _compute_safe_neighbors_mask(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Create mask marking tiles adjacent to revealed zeros (guaranteed safe).
+        
+        Args:
+            obs: (H, W, D) observation
+            
+        Returns:
+            mask: (H, W, D) binary mask where 1.0 = safe neighbor of zero
+        """
+        H, W, D = obs.shape
+        mask = np.zeros((H, W, D), dtype=np.float32)
+        
+        # Find all zero tiles
+        zeros = np.argwhere(obs == 0)
+        
+        # Mark all unrevealed neighbors of zeros as safe
+        for zx, zy, zz in zeros:
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    for dz in [-1, 0, 1]:
+                        if dx == dy == dz == 0:
+                            continue
+                        nx, ny, nz = zx + dx, zy + dy, zz + dz
+                        if 0 <= nx < H and 0 <= ny < W and 0 <= nz < D:
+                            if obs[nx, ny, nz] == -1:  # Unrevealed
+                                mask[nx, ny, nz] = 1.0
+        
+        return mask
+
+    # -------------------------
     # Obs -> tensor
     # -------------------------
-    def obs_to_tensor(self, obs_batch: np.ndarray) -> torch.Tensor:
+    def obs_to_tensor(self, obs_batch: np.ndarray, use_augmentation: bool = True) -> torch.Tensor:
         """
-        Converts (B,H,W,D) to (B,1,D,H,W), float.
+        Converts (B,H,W,D) to (B,3,D,H,W) with augmented channels.
         """
-        # Normalize lightly for stability
-        x = obs_batch.astype(np.float32) / 26.0
-        # (B,H,W,D) -> (B,D,H,W)
-        x = np.transpose(x, (0, 3, 1, 2))
-        x = torch.from_numpy(x).unsqueeze(1)  # (B,1,D,H,W)
+        B = obs_batch.shape[0]
+        
+        if not use_augmentation:
+            # Simple 1-channel fallback for debugging
+            x = obs_batch.astype(np.float32) / 26.0
+            x = np.expand_dims(x, axis=1)  # (B, 1, H, W, D)
+            x = np.transpose(x, (0, 1, 4, 2, 3))  # (B, 1, D, H, W)
+            # Repeat to 3 channels
+            x = np.repeat(x, 3, axis=1)
+            return torch.from_numpy(x).to(self.device)
+        
+        augmented_batch = []
+        
+        for i in range(B):
+            aug = self.augment_observation(obs_batch[i])  # (3, H, W, D)
+            augmented_batch.append(aug)
+        
+        # Stack: (B, 3, H, W, D)
+        x = np.stack(augmented_batch, axis=0)
+        # Transpose: (B, 3, H, W, D) -> (B, 3, D, H, W)
+        x = np.transpose(x, (0, 1, 4, 2, 3))
+        x = torch.from_numpy(x)
         return x.to(self.device)
+
+    # -------------------------
+    # Safe Action Detection (#8: Hybrid approach)
+    # -------------------------
+    def get_safe_actions(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Get guaranteed safe actions (neighbors of revealed zeros).
+        
+        Args:
+            obs: (H, W, D) observation
+            
+        Returns:
+            safe_actions: flat indices of guaranteed safe moves
+        """
+        H, W, D = obs.shape
+        safe_coords = []
+        
+        # Find all zero tiles
+        zeros = np.argwhere(obs == 0)
+        
+        # Check all neighbors of zeros
+        for zx, zy, zz in zeros:
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    for dz in [-1, 0, 1]:
+                        if dx == dy == dz == 0:
+                            continue
+                        nx, ny, nz = zx + dx, zy + dy, zz + dz
+                        if 0 <= nx < H and 0 <= ny < W and 0 <= nz < D:
+                            if obs[nx, ny, nz] == -1:  # Unrevealed
+                                safe_coords.append((nx, ny, nz))
+        
+        if not safe_coords:
+            return np.array([], dtype=np.int64)
+        
+        # Remove duplicates and convert to flat indices
+        safe_coords = list(set(safe_coords))
+        safe_actions = []
+        for x, y, z in safe_coords:
+            idx = z * (H * W) + y * W + x
+            safe_actions.append(idx)
+        
+        return np.array(safe_actions, dtype=np.int64)
 
     # -------------------------
     # Single obs action
     # -------------------------
-    def select_action(self, obs: np.ndarray) -> int:
+    def select_action(self, obs: np.ndarray, use_hybrid: bool = None) -> int:
+        """
+        Select action with optional hybrid approach.
+        
+        Args:
+            obs: (H, W, D) observation
+            use_hybrid: Override self.use_hybrid if specified
+        """
         self.total_steps += 1
         eps = self.epsilon()
+        
+        if use_hybrid is None:
+            use_hybrid = self.use_hybrid
 
         legal = self.legal_action_indices(obs)
         if legal.size == 0:
             # fallback: allow anything (should be rare)
             return random.randrange(self.n_actions)
+        
+        # Hybrid: Sometimes take guaranteed safe moves (#8)
+        if use_hybrid:
+            safe_actions = self.get_safe_actions(obs)
+            if safe_actions.size > 0 and random.random() < self.safe_action_prob:
+                return int(random.choice(safe_actions))
 
         # Explore
         if random.random() < eps:
@@ -282,9 +452,9 @@ class DuelingDCNNAgent:
     # -------------------------
     # Parallel obs action
     # -------------------------
-    def select_actions(self, obs_batch: np.ndarray) -> np.ndarray:
+    def select_actions(self, obs_batch: np.ndarray, use_hybrid: bool = None) -> np.ndarray:
         """
-        For vector envs.
+        For vector envs with optional hybrid action selection.
         obs_batch shape: (B,H,W,D)
         returns actions shape: (B,)
         """
@@ -294,23 +464,37 @@ class DuelingDCNNAgent:
         eps = self.epsilon()
         # Only increment once per batch call (keeps schedule sane)
         self.total_steps += B
+        
+        if use_hybrid is None:
+            use_hybrid = self.use_hybrid
 
         # Decide which envs explore
         explore_flags = np.random.rand(B) < eps
+        
+        # Hybrid: Check for safe actions first (#8)
+        safe_flags = np.zeros(B, dtype=bool)
+        if use_hybrid:
+            for i in range(B):
+                safe_actions = self.get_safe_actions(obs_batch[i])
+                if safe_actions.size > 0 and random.random() < self.safe_action_prob:
+                    actions[i] = int(random.choice(safe_actions))
+                    safe_flags[i] = True
 
         # Build legal masks and handle empties
         legal_lists = [self.legal_action_indices(obs_batch[i]) for i in range(B)]
 
-        # Exploration picks
+        # Exploration picks (skip if already handled by safe action)
         for i in range(B):
+            if safe_flags[i]:
+                continue
             legal = legal_lists[i]
             if legal.size == 0:
                 actions[i] = random.randrange(self.n_actions)
             elif explore_flags[i]:
                 actions[i] = int(random.choice(legal))
 
-        # Exploitation for the rest
-        exploit_idxs = [i for i in range(B) if not explore_flags[i] and legal_lists[i].size > 0]
+        # Exploitation for the rest (skip safe and explore)
+        exploit_idxs = [i for i in range(B) if not safe_flags[i] and not explore_flags[i] and legal_lists[i].size > 0]
         if exploit_idxs:
             sub_obs = obs_batch[exploit_idxs]
             x = self.obs_to_tensor(sub_obs)

@@ -2,12 +2,6 @@ import numpy as np
 from itertools import product
 import random
 
-# environment variables
-HEIGHT = 5
-WIDTH = 5
-DEPTH = 5
-MINES = 10
-
 class Agent:
     """
     Bayesian Approximation Minesweeper agent:
@@ -18,28 +12,34 @@ class Agent:
     - of the local probabilities derived from each adjacent number tile
     """
 
-    def __init__(self, action_space):
+    def __init__(self, action_space, height=5, width=5, depth=5, num_mines=10):
         self.action_space = action_space
+        self.height = height
+        self.width = width
+        self.depth = depth
+        self.num_mines = num_mines
 
     def select_action(self, obs):
         H, W, D = obs.shape
         zeros = np.argwhere(obs == 0)
 
         # check for 0 tiles for guaranteed safe moves
-        for zx, zy, zz in zeros:
+        # argwhere returns [height_idx, width_idx, depth_idx] for shape (H, W, D)
+        for x, y, z in zeros:
             for dx, dy, dz in product((-1,0,1), repeat=3):
                 if dx == dy == dz == 0:
                     continue
-                nx, ny, nz = zx + dx, zy + dy, zz + dz
+                nx, ny, nz = x + dx, y + dy, z + dz
                 if 0 <= nx < H and 0 <= ny < W and 0 <= nz < D:
                     if obs[nx, ny, nz] == -1:
+                        # action encoding: z * (H * W) + y * W + x
                         action = nz * (H * W) + ny * W + nx
                         # print("Picking safe:", (nx, ny, nz))
                         return action
 
         # base probability
         frontier = np.argwhere(obs == -1)
-        base_probability = MINES / (HEIGHT * WIDTH * DEPTH)
+        base_probability = self.num_mines / (self.height * self.width * self.depth)
 
         # estimate probabilities for each frontier tile
         probabilities = {}

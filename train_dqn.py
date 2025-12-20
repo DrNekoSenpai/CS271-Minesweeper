@@ -22,11 +22,19 @@ def make_env(depth, height, width, num_mines):
 
 def main(size:int, mines:int, num_steps:int):
     parser = argparse.ArgumentParser()
+    parser.add_argument("--size", type=int, default=size, help="Board size (creates size x size x size cube)")
+    parser.add_argument("--mines", type=int, default=mines, help="Number of mines")
+    parser.add_argument("--num-steps", type=int, default=num_steps, help="Total training steps")
     parser.add_argument("--num-envs", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
+    
+    # Use command line args if provided
+    size = args.size
+    mines = args.mines
+    num_steps = args.num_steps
 
     directory = f"./metrics/s{size}-m{mines}"
     if not os.path.exists(directory): os.makedirs(directory)
@@ -45,7 +53,9 @@ def main(size:int, mines:int, num_steps:int):
         warmup=5000,
         target_update=1000, 
         buffer_size=200000, 
-        eps_decay_steps=150000
+        eps_decay_steps=150000,
+        # !!!!! 5070 pytorch issue workaround !!!!!
+        # device="cpu"  # Force CPU for compatibility - comment this out to use GPU if available
     )
 
     episode_rewards = np.zeros(args.num_envs, dtype=np.float32)
@@ -219,7 +229,7 @@ def main(size:int, mines:int, num_steps:int):
             plt.close()
             print(f"Saved safe tiles curve to safe_tiles-{step}.png")
 
-            pattern = re.compile(r"(rewards|safe_moves|safe_tiles)-(\d+)\.png")
+            pattern = re.compile(r"(loss|rewards|safe_moves|safe_tiles)-(\d+)\.png")
             for fname in os.listdir(f"./metrics/s{size}-m{mines}/"): 
                 match = pattern.match(fname)
                 if not match: continue 
@@ -228,7 +238,5 @@ def main(size:int, mines:int, num_steps:int):
                 if file_step < step: os.remove(f"./metrics/s{size}-m{mines}/{fname}")
 
 if __name__ == "__main__":
-    main(size=4, mines=5, num_steps=250000)
-    main(size=5, mines=5, num_steps=250000)
-    main(size=5, mines=8, num_steps=100000)
-    main(size=5, mines=10, num_steps=160000)
+    # Default: just run with command line args or defaults
+    main(size=5, mines=10, num_steps=250000)
