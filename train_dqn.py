@@ -3,7 +3,8 @@ import numpy as np
 import gymnasium as gym
 import os
 import matplotlib.pyplot as plt 
-import re 
+import re
+import time
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
@@ -25,8 +26,8 @@ def main(size:int, mines:int, num_steps:int):
     parser.add_argument("--size", type=int, default=size, help="Board size (creates size x size x size cube)")
     parser.add_argument("--mines", type=int, default=mines, help="Number of mines")
     parser.add_argument("--num-steps", type=int, default=num_steps, help="Total training steps")
-    parser.add_argument("--num-envs", type=int, default=8)
-    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--num-envs", type=int, default=16, help="Parallel environments (higher = more GPU usage)")
+    parser.add_argument("--batch-size", type=int, default=256, help="Training batch size (higher = more GPU usage)")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
@@ -57,6 +58,9 @@ def main(size:int, mines:int, num_steps:int):
         # !!!!! 5070 pytorch issue workaround !!!!!
         # device="cpu"  # Force CPU for compatibility - comment this out to use GPU if available
     )
+    
+    print(f"Using device: {agent.device}")
+    print(f"Batch size: {args.batch_size}, Num envs: {args.num_envs}")
 
     episode_rewards = np.zeros(args.num_envs, dtype=np.float32)
     episode_safe_moves = np.zeros(args.num_envs, dtype=np.float32)
@@ -68,16 +72,20 @@ def main(size:int, mines:int, num_steps:int):
     recent_safe_moves = []
     recent_safe_tiles = []
 
-    # Look for pretrained checkpoint first, then regular checkpoints
-    pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
+    # Look for training checkpoints first, then pretrained as fallback
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
+    checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
     
-    if os.path.exists(pretrained_path):
-        load_path = pretrained_path
-        print(f"Found pretrained checkpoint: {pretrained_path}")
+    if checkpoints:
+        load_path = checkpoints[-1]  # Latest training checkpoint
+        print(f"Found training checkpoint: {load_path}")
     else:
-        checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
-        load_path = checkpoints[-1] if checkpoints else f"dqn-checkpoint-0.pth"
+        pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
+        if os.path.exists(pretrained_path):
+            load_path = pretrained_path
+            print(f"Found pretrained checkpoint: {pretrained_path}")
+        else:
+            load_path = f"dqn-checkpoint-0.pth"
 
     save_every = 5000
     start_step = 0
@@ -139,6 +147,11 @@ def main(size:int, mines:int, num_steps:int):
         with open(f"./metrics/s{size}-m{mines}/loss.log", "w", encoding="utf-8") as file: 
             file.write("")
 
+    # Timing for progress tracking
+    start_time = time.time()
+    last_print_time = start_time
+    last_print_step = start_step
+
     for step in range(start_step, num_steps + 1):
         actions = agent.select_actions(obs)
 
@@ -166,12 +179,36 @@ def main(size:int, mines:int, num_steps:int):
                 
                 # Print stats every 100 episodes (average of last 100)
                 if completed % 100 == 0:
+                    current_time = time.time()
+                    elapsed = current_time - start_time
+                    steps_done = step - start_step
+                    steps_remaining = num_steps - step
+                    
+                    # Calculate rate and ETA
+                    if steps_done > 0:
+                        steps_per_sec = steps_done / elapsed
+                        eta_seconds = steps_remaining / steps_per_sec
+                        eta_hours = eta_seconds / 3600
+                        
+                        # Recent rate (since last print)
+                        time_since_last = current_time - last_print_time
+                        steps_since_last = step - last_print_step
+                        recent_rate = steps_since_last / time_since_last if time_since_last > 0 else 0
+                        
+                        last_print_time = current_time
+                        last_print_step = step
+                    else:
+                        steps_per_sec = 0
+                        eta_hours = 0
+                        recent_rate = 0
+                    
                     avg_reward = np.mean(recent_rewards[-100:])
                     avg_safe_moves = np.mean(recent_safe_moves[-100:])
                     avg_safe_tiles = np.mean(recent_safe_tiles[-100:])
                     wins = sum(1 for r in recent_rewards[-100:] if r > 0)
                     
-                    print(f"[step={step}] reward={avg_reward:.1f} safe_moves={avg_safe_moves:.1f} safe_tiles={avg_safe_tiles:.1f} wins={wins}/100")
+                    print(f"[step={step}/{num_steps}] reward={avg_reward:.1f} wins={wins}/100 | "
+                          f"{recent_rate:.1f} steps/s | ETA: {eta_hours:.1f}h")
                     logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles))
 
                 episode_rewards[i] = 0.0

@@ -188,7 +188,7 @@ class DuelingDCNNAgent:
         self.total_steps = 0
         
         # Hybrid action selection parameters
-        self.use_hybrid = True  # Enable hybrid action selection
+        self.use_hybrid = True
         self.safe_action_prob = 0.3  # 30% chance to use guaranteed safe moves when available
 
         if device is None:
