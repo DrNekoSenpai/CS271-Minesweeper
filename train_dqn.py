@@ -62,10 +62,22 @@ def main(size:int, mines:int, num_steps:int):
     episode_safe_moves = np.zeros(args.num_envs, dtype=np.float32)
     episode_safe_tiles = np.zeros(args.num_envs, dtype=np.float32)
     completed = 0
+    
+    # Track last 100 completed episodes for metrics
+    recent_rewards = []
+    recent_safe_moves = []
+    recent_safe_tiles = []
 
+    # Look for pretrained checkpoint first, then regular checkpoints
+    pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
-    checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
-    load_path = checkpoints[-1] if checkpoints else f"dqn-checkpoint-0.pth"
+    
+    if os.path.exists(pretrained_path):
+        load_path = pretrained_path
+        print(f"Found pretrained checkpoint: {pretrained_path}")
+    else:
+        checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
+        load_path = checkpoints[-1] if checkpoints else f"dqn-checkpoint-0.pth"
 
     save_every = 5000
     start_step = 0
@@ -83,10 +95,19 @@ def main(size:int, mines:int, num_steps:int):
         "loss": [] 
     }
 
-    if not args.fresh and os.path.exists(load_path): 
-        start_step = agent.load_checkpoint(load_path)
-        print(f"Loaded checkpoint {load_path} from step {start_step}")
+    if not args.fresh and os.path.exists(load_path):
+        try:
+            start_step = agent.load_checkpoint(load_path)
+            print(f"Loaded checkpoint {load_path} from step {start_step}")
+        except RuntimeError as e:
+            if "size mismatch" in str(e):
+                print(f"Warning: Checkpoint architecture mismatch (old 1-channel vs new 3-channel model)")
+                print(f"Starting fresh training instead.")
+                start_step = 0
+            else:
+                raise
 
+    if start_step > 0:
         with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
         
@@ -137,9 +158,21 @@ def main(size:int, mines:int, num_steps:int):
 
             if done[i]:
                 completed += 1
-                if completed % 100 == 0: 
-                    print(f"[step={step}] reward={np.mean(episode_rewards[i]):.1f} safe_moves={np.mean(episode_safe_moves[i]):.1f} safe_tiles={np.mean(episode_safe_tiles[i]):.1f}")
-                    logs.append((step, np.mean(episode_rewards[i]), np.mean(episode_safe_moves[i]), np.mean(episode_safe_tiles[i])))
+                
+                # Track this completed episode
+                recent_rewards.append(episode_rewards[i])
+                recent_safe_moves.append(episode_safe_moves[i])
+                recent_safe_tiles.append(episode_safe_tiles[i])
+                
+                # Print stats every 100 episodes (average of last 100)
+                if completed % 100 == 0:
+                    avg_reward = np.mean(recent_rewards[-100:])
+                    avg_safe_moves = np.mean(recent_safe_moves[-100:])
+                    avg_safe_tiles = np.mean(recent_safe_tiles[-100:])
+                    wins = sum(1 for r in recent_rewards[-100:] if r > 0)
+                    
+                    print(f"[step={step}] reward={avg_reward:.1f} safe_moves={avg_safe_moves:.1f} safe_tiles={avg_safe_tiles:.1f} wins={wins}/100")
+                    logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles))
 
                 episode_rewards[i] = 0.0
                 episode_safe_moves[i] = 0.0

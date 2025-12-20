@@ -29,3 +29,15 @@
 **File:** `pretrain_dqn_imitation.py`
 - Fixed win/loss tracking to check `reward >= 100` instead of non-existent `info['result']`
 - Added expert agent performance metrics display
+
+**File:** `train_dqn.py`
+- Added architecture mismatch detection when loading checkpoints
+- Gracefully handles old 1-channel vs new 3-channel model incompatibility
+- Prioritizes pretrained checkpoints (`dqn-pretrained-s{size}-m{mines}.pth`)
+- Falls back to regular checkpoints if no pretrained version exists
+
+**File:** `train_dqn.py`
+- Fixed episode metrics to track last 100 completed episodes (all parallel envs)
+- Previously only logged single environment's metrics
+- Added win count display: `wins={count}/100`
+- Now shows proper rolling average of performance
