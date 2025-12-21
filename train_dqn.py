@@ -241,8 +241,10 @@ def main(size:int, mines:int, num_steps:int):
 
         obs = next_obs
 
-        # Train
-        stats = agent.optimize()
+        # train every n steps (helps with efficiency with vectorized envs)
+        stats = None
+        if step % 4 == 0: # train every 4 steps
+            stats = agent.optimize()
 
         if step % save_every == 0 and step != start_step: 
             save_path = f"{checkpoint_path}-{step}.pth"
@@ -264,10 +266,12 @@ def main(size:int, mines:int, num_steps:int):
                 file.write(f"Saved checkpoint: {save_path}\n")
                 logs = []
 
-            with open(f'./metrics/s{size}-m{mines}/loss.log', 'a', encoding="utf-8") as file: 
-                file.write(f"[step={step}]: {stats['loss']:.6f}\n")
-                loss_dict["loss"].append(np.round(stats['loss'], 6))
-                loss_dict["steps"].append(step)
+            # Only log loss when training occurred
+            if stats is not None:
+                with open(f'./metrics/s{size}-m{mines}/loss.log', 'a', encoding="utf-8") as file: 
+                    file.write(f"[step={step}]: {stats['loss']:.6f}\n")
+                    loss_dict["loss"].append(np.round(stats['loss'], 6))
+                    loss_dict["steps"].append(step)
 
             # rm old checkpoints except 100k milestones
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
