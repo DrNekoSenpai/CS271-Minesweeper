@@ -125,21 +125,23 @@ def main(size:int, mines:int, num_steps:int):
         with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
             lines = file.readlines() 
         
-        # Parse metrics with win rate if available
-        metrics_pattern_with_wins = r"\[step=(\d+)/(\d+)\] reward=(.*) wins=(\d+)/100"
-        metrics_pattern_old = r"\[step=(\d+)\] reward=(.*) safe_moves=(.*) safe_tiles=(.*)"
+        # Parse complete metrics format: step, reward, safe_moves, safe_tiles, wins
+        metrics_pattern = r"\[step=(\d+)/(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+) wins=(\d+)/100"
+        metrics_pattern_old = r"\[step=(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+)"
         
         for line in lines: 
-            # Try new format first (with wins)
-            match = re.search(metrics_pattern_with_wins, line)
+            # Try new complete format first (with wins)
+            match = re.search(metrics_pattern, line)
             if match:
-                steps, _, reward, wins = match.groups()
+                steps, _, reward, safe_moves, safe_tiles, wins = match.groups()
                 metrics_dict["steps"].append(int(steps))
                 metrics_dict["reward"].append(float(reward))
+                metrics_dict["safe_moves"].append(float(safe_moves))
+                metrics_dict["safe_tiles"].append(float(safe_tiles))
                 wins_dict["steps"].append(int(steps))
                 wins_dict["wins"].append(int(wins))
             else:
-                # Fall back to old format
+                # Fall back to old format (no wins)
                 match = re.search(metrics_pattern_old, line)
                 if match: 
                     steps, reward, safe_moves, safe_tiles = match.groups()
@@ -250,7 +252,7 @@ def main(size:int, mines:int, num_steps:int):
             with open(f'./metrics/s{size}-m{mines}/metrics.log', 'a', encoding='utf-8') as file: 
                 for l in logs: 
                     s, reward, safe_moves, safe_tiles, wins = l
-                    file.write(f"[step={s}/{num_steps}] reward={reward} wins={wins}/100\n")
+                    file.write(f"[step={s}/{num_steps}] reward={reward:.1f} safe_moves={safe_moves:.1f} safe_tiles={safe_tiles:.1f} wins={wins}/100\n")
 
                     metrics_dict["steps"].append(s)
                     metrics_dict["reward"].append(reward)
@@ -267,14 +269,17 @@ def main(size:int, mines:int, num_steps:int):
                 loss_dict["loss"].append(np.round(stats['loss'], 6))
                 loss_dict["steps"].append(step)
 
-            # Remove old checkpoints and models
+            # rm old checkpoints except 100k milestones
             pattern = re.compile(rf"{checkpoint_path}-(\d+)\.pth")
             for fname in os.listdir("."): 
                 match = pattern.match(fname)
                 if not match: continue 
 
                 file_step = int(match.group(1))
-                if file_step < step: os.remove(fname)
+                is_milestone = (file_step % 100000 == 0) and (file_step > 0)
+                if file_step < step and not is_milestone:
+                    os.remove(fname)
+                    print(f"Removed old checkpoint: {fname}")
 
         if step % save_every == 0: 
             plt.figure(figsize=(10, 6))
