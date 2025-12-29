@@ -75,7 +75,7 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
         print(f"  Expert win rate: {win_rate:.1f}%")
         print(f"  Average moves per winning episode: {avg_moves:.1f}")
         print(f"  Total transitions collected: {len(trajectories)}")
-        print(f"  ⚠️  Training ONLY on winning trajectories!")
+        print(f"  [INFO] Training ONLY on winning trajectories!")
     
     return trajectories
 
