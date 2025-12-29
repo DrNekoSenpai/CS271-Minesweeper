@@ -100,7 +100,21 @@ class MinesweeperEnv(gym.Env):
         new_visible = np.sum(self.game.visible >= 0)
         delta = int(new_visible - prev_visible)
 
+        # Base reward: tiles revealed
         reward = float(delta)
+        
+        # Bonus for progress toward completion
+        total_safe = self.width * self.height * self.depth - self.num_mines
+        progress = new_visible / total_safe
+        
+        # Add progress bonus (small but meaningful)
+        if delta > 0:
+            reward += progress * 5.0  # Max +5 when near completion
+        
+        # Bonus for high-value reveals (flood fills are good)
+        if delta > 5:
+            reward += 2.0
+        
         safe_tiles = max(delta, 0)
 
         # "Good move" semantics: only count if we actually revealed something new
@@ -108,6 +122,7 @@ class MinesweeperEnv(gym.Env):
 
         info["safe_move"] = safe_move
         info["safe_tiles"] = safe_tiles
+        info["progress"] = progress
 
         return obs, reward, False, False, info
 

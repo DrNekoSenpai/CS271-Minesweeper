@@ -47,6 +47,9 @@ def main(size:int, mines:int, num_steps:int):
 
     obs, info = envs.reset()  # obs shape: (num_envs, H, W, D)
 
+    # Initialize agent
+    # NOTE: Hybrid mode (safe-action heuristic) is DISABLED by default in agent.__init__
+    # This forces the DQN to actually learn instead of relying on the heuristic as a crutch
     agent = DuelingDCNNAgent(
         height=size, width=size, depth=size,
         lr=args.lr,
@@ -71,6 +74,7 @@ def main(size:int, mines:int, num_steps:int):
     recent_rewards = []
     recent_safe_moves = []
     recent_safe_tiles = []
+    recent_wins = []  # Track actual wins (reward == 100)
 
     # Look for training checkpoints first, then pretrained as fallback
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
@@ -192,6 +196,12 @@ def main(size:int, mines:int, num_steps:int):
             episode_rewards[i] += rewards[i]
             episode_safe_moves[i] += safe_batch[i]
             episode_safe_tiles[i] += tile_batch[i]
+            
+            # Track actual wins: terminal reward == 100 (revealed all non-mine tiles)
+            if done[i] and rewards[i] == 100.0:
+                recent_wins.append(1)
+            elif done[i]:
+                recent_wins.append(0)
 
             if done[i]:
                 completed += 1
@@ -229,11 +239,14 @@ def main(size:int, mines:int, num_steps:int):
                     avg_reward = np.mean(recent_rewards[-100:])
                     avg_safe_moves = np.mean(recent_safe_moves[-100:])
                     avg_safe_tiles = np.mean(recent_safe_tiles[-100:])
-                    wins = sum(1 for r in recent_rewards[-100:] if r > 0)
                     
-                    print(f"[step={step}/{num_steps}] reward={avg_reward:.1f} wins={wins}/100 | "
+                    # True wins: episodes that ended with reward == 100
+                    actual_wins = sum(recent_wins[-100:]) if len(recent_wins) >= 100 else sum(recent_wins)
+                    episodes_counted = min(100, len(recent_wins))
+                    
+                    print(f"[step={step}/{num_steps}] reward={avg_reward:.1f} wins={actual_wins}/{episodes_counted} | "
                           f"{recent_rate:.1f} steps/s | ETA: {eta_hours:.1f}h")
-                    logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles, wins))
+                    logs.append((step, avg_reward, avg_safe_moves, avg_safe_tiles, actual_wins))
 
                 episode_rewards[i] = 0.0
                 episode_safe_moves[i] = 0.0

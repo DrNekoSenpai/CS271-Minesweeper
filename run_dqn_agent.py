@@ -83,7 +83,7 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
 
     total_reward = 0.0
     total_moves = 0
-    won = True
+    won = False
 
     while not done:
         if render and env.render_mode == "ansi":
@@ -94,9 +94,11 @@ def run_episode(env: MinesweeperEnv, agent: DuelingDCNNAgent, render: bool = Fal
 
         total_reward += reward
         total_moves += 1
-
-        # any negative reward implies a mine hit / loss path.
-        if reward < 0:
+        
+        # Check if terminal and win (before normalization: reward == 100)
+        if terminated and reward == 100.0:
+            won = True
+        elif terminated and reward == -100.0:
             won = False
 
         done = terminated or truncated

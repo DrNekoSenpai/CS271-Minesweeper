@@ -36,10 +36,13 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
     episode_lengths = []
     
     iterator = tqdm(range(num_episodes)) if verbose else range(num_episodes)
-    for episode in iterator:
+    episodes_collected = 0
+    
+    while episodes_collected < num_episodes:
         obs, _ = env.reset()
         done = False
         steps = 0
+        episode_transitions = []  # Collect episode first, then decide if we keep it
         
         while not done:
             action = expert_agent.select_action(obs)
@@ -47,27 +50,32 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
             done = terminated or truncated
             steps += 1
             
-            trajectories.append((obs.copy(), action, reward, next_obs.copy(), done))
+            episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
-            
-            # Track episode outcome
-            if done:
-                episode_lengths.append(steps)
-                # Terminal reward is +100 for win, -100 for loss
-                if reward >= 100:  # More explicit check for win
-                    wins += 1
-                else:
-                    losses += 1
+        
+        # Only keep winning episodes for training!
+        if reward == 100.0:
+            trajectories.extend(episode_transitions)
+            wins += 1
+            episode_lengths.append(steps)
+            episodes_collected += 1
+            if verbose:
+                iterator.update(1)
+        else:
+            losses += 1
+            # Keep trying until we get num_episodes WINS
     
     if verbose:
-        win_rate = (wins / num_episodes) * 100
+        total_attempts = wins + losses
+        win_rate = (wins / total_attempts) * 100 if total_attempts > 0 else 0
         avg_moves = np.mean(episode_lengths)
         print(f"\nExpert Agent Performance:")
-        print(f"  Total episodes: {num_episodes}")
-        print(f"  Wins: {wins} ({win_rate:.1f}%)")
-        print(f"  Losses: {losses} ({100-win_rate:.1f}%)")
-        print(f"  Average moves per episode: {avg_moves:.1f}")
+        print(f"  Winning episodes collected: {wins}")
+        print(f"  Total attempts needed: {total_attempts}")
+        print(f"  Expert win rate: {win_rate:.1f}%")
+        print(f"  Average moves per winning episode: {avg_moves:.1f}")
         print(f"  Total transitions collected: {len(trajectories)}")
+        print(f"  ⚠️  Training ONLY on winning trajectories!")
     
     return trajectories
 

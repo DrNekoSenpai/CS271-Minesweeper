@@ -188,8 +188,10 @@ class DuelingDCNNAgent:
         self.total_steps = 0
         
         # Hybrid action selection parameters
-        self.use_hybrid = True
-        self.safe_action_prob = 0.3  # 30% chance to use guaranteed safe moves when available
+        # IMPORTANT: Set to False during training to force DQN to learn!
+        # Only enable during evaluation if you want the heuristic boost
+        self.use_hybrid = False
+        self.safe_action_prob = 0.0  # Disabled during training
 
         if device is None:
             # Check if CUDA is truly usable (not just available)
