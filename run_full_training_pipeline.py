@@ -88,14 +88,14 @@ def run_command(cmd, description):
         elapsed = time.time() - start_time
         
         if process.returncode == 0:
-            print(f"\n{GREEN}✓ {description} completed successfully{RESET} ({elapsed:.1f}s)")
+            print(f"\n{GREEN}[PASS] {description} completed successfully{RESET} ({elapsed:.1f}s)")
             return True
         else:
-            print(f"\n{RED}✗ {description} failed{RESET} (exit code: {process.returncode}, {elapsed:.1f}s)")
+            print(f"\n{RED}[FAIL] {description} failed{RESET} (exit code: {process.returncode}, {elapsed:.1f}s)")
             return False
             
     except Exception as e:
-        print(f"\n{RED}✗ Error running {description}: {str(e)}{RESET}")
+        print(f"\n{RED}[ERROR] Error running {description}: {str(e)}{RESET}")
         return False
 
 
@@ -138,7 +138,7 @@ def main():
     checkpoint_exists = Path(pretrained_checkpoint).exists()
     
     if checkpoint_exists and args.skip_pretrain:
-        print(f"\n{YELLOW}⊘ Skipping pretraining - checkpoint exists: {pretrained_checkpoint}{RESET}")
+        print(f"\n{YELLOW}[SKIP] Skipping pretraining - checkpoint exists: {pretrained_checkpoint}{RESET}")
         skip_stage1 = True
     else:
         skip_stage1 = False
@@ -197,7 +197,7 @@ def main():
     seconds = int(total_time % 60)
     
     print_header("PIPELINE COMPLETE")
-    print(f"{GREEN}✓ Both stages completed successfully!{RESET}")
+    print(f"{GREEN}[SUCCESS] Both stages completed successfully!{RESET}")
     print(f"\nTotal time: {hours}h {minutes}m {seconds}s")
     print(f"\n{CYAN}Next steps:{RESET}")
     print(f"  1. Evaluate pretrained model:")
