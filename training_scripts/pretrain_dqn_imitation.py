@@ -11,38 +11,150 @@ This gives the DQN a warm start with good behavior patterns.
 import argparse
 import numpy as np
 from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from agents.bayesian_approximation_agent import Agent as BayesianAgent
 from backend.environment import MinesweeperEnv
 
 
-def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
+def _collect_single_episode(args_tuple):
     """
-    Collect trajectories from expert agent (Bayesian).
+    Worker function for parallel episode collection.
     
     Args:
-        env: MinesweeperEnv instance
-        expert_agent: Bayesian agent
-        num_episodes: Number of episodes to collect
+        args_tuple: (size, mines, episode_id) tuple
+        
+    Returns:
+        (trajectories, steps, attempts): Episode data, episode length, and number of attempts needed
+    """
+    size, mines, episode_id = args_tuple
+    
+    # Create fresh env and agent in this worker process
+    env = MinesweeperEnv(
+        height=size,
+        width=size,
+        depth=size,
+        num_mines=mines,
+        render_mode=None
+    )
+    
+    expert = BayesianAgent(
+        env.action_space,
+        height=size,
+        width=size,
+        depth=size,
+        num_mines=mines
+    )
+    
+    # Keep trying until we get a win
+    attempts = 0
+    while True:
+        attempts += 1
+        obs, _ = env.reset()
+        done = False
+        steps = 0
+        episode_transitions = []
+        
+        while not done:
+            action = expert.select_action(obs)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            steps += 1
+            
+            episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
+            obs = next_obs
+        
+        # Only return winning episodes
+        if reward == 100.0:
+            return episode_transitions, steps, attempts
+        # Otherwise, loop and try again
+
+
+def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, num_workers=None):
+    """
+    Collect trajectories from expert agent (Bayesian) using parallel workers.
+    
+    Args:
+        env: MinesweeperEnv instance (used for extracting config)
+        expert_agent: Bayesian agent (not used in parallel version, kept for API compat)
+        num_episodes: Number of winning episodes to collect
         verbose: Print progress
+        num_workers: Number of parallel workers (default: cpu_count())
         
     Returns:
         trajectories: List of (obs, action, reward, next_obs, done) tuples
+    """
+    if num_workers is None:
+        num_workers = cpu_count()
+    
+    if num_workers == 1:
+        # Fall back to single-threaded for debugging or when explicitly requested
+        return _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose)
+    
+    # Extract environment config
+    size = env.height
+    mines = env.num_mines
+    
+    trajectories = []
+    episode_lengths = []
+    total_attempts = 0
+    
+    if verbose:
+        print(f"Collecting {num_episodes} winning episodes using {num_workers} parallel workers...")
+    
+    # Prepare arguments for each episode
+    episode_args = [(size, mines, i) for i in range(num_episodes)]
+    
+    # Collect episodes in parallel with progress bar
+    with Pool(processes=num_workers) as pool:
+        if verbose:
+            results = list(tqdm(
+                pool.imap_unordered(_collect_single_episode, episode_args),
+                total=num_episodes,
+                desc="Collecting episodes"
+            ))
+        else:
+            results = pool.map(_collect_single_episode, episode_args)
+    
+    # Aggregate results
+    for episode_transitions, steps, attempts in results:
+        trajectories.extend(episode_transitions)
+        episode_lengths.append(steps)
+        total_attempts += attempts
+    
+    if verbose:
+        win_rate = (num_episodes / total_attempts) * 100 if total_attempts > 0 else 0
+        avg_moves = np.mean(episode_lengths)
+        print(f"\nExpert Agent Performance:")
+        print(f"  Winning episodes collected: {num_episodes}")
+        print(f"  Total attempts needed: {total_attempts}")
+        print(f"  Expert win rate: {win_rate:.1f}%")
+        print(f"  Parallel workers: {num_workers}")
+        print(f"  Average moves per winning episode: {avg_moves:.1f}")
+        print(f"  Total transitions collected: {len(trajectories)}")
+        print(f"  [INFO] Training ONLY on winning trajectories!")
+    
+    return trajectories
+
+
+def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose=True):
+    """
+    Single-threaded version of trajectory collection (fallback).
     """
     trajectories = []
     wins = 0
     losses = 0
     episode_lengths = []
     
-    iterator = tqdm(range(num_episodes)) if verbose else range(num_episodes)
+    iterator = tqdm(range(num_episodes), desc="Collecting episodes") if verbose else range(num_episodes)
     episodes_collected = 0
     
     while episodes_collected < num_episodes:
         obs, _ = env.reset()
         done = False
         steps = 0
-        episode_transitions = []  # Collect episode first, then decide if we keep it
+        episode_transitions = []
         
         while not done:
             action = expert_agent.select_action(obs)
@@ -53,7 +165,6 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Only keep winning episodes for training!
         if reward == 100.0:
             trajectories.extend(episode_transitions)
             wins += 1
@@ -63,7 +174,6 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True):
                 iterator.update(1)
         else:
             losses += 1
-            # Keep trying until we get num_episodes WINS
     
     if verbose:
         total_attempts = wins + losses
@@ -128,6 +238,7 @@ def main():
     parser.add_argument("--num-updates", type=int, default=5000, help="Number of training updates")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--num-workers", type=int, default=None, help="Parallel workers for data collection (default: CPU count)")
     parser.add_argument("--output", type=str, default=None, help="Path to save pretrained checkpoint")
     args = parser.parse_args()
     
@@ -179,8 +290,8 @@ def main():
     print(f"Using device: {agent.device}")
     
     # Collect expert trajectories
-    print(f"\nCollecting {args.expert_episodes} episodes from expert...")
-    trajectories = collect_expert_trajectories(env, expert, args.expert_episodes)
+    print(f"\nCollecting {args.expert_episodes} winning episodes from expert...")
+    trajectories = collect_expert_trajectories(env, expert, args.expert_episodes, num_workers=args.num_workers)
     
     # Pre-train on expert data
     print("\nPre-training DQN on expert trajectories...")

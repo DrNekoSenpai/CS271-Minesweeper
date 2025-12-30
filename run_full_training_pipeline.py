@@ -118,6 +118,8 @@ def main():
                         help='Batch size for pretraining [default: 128]')
     parser.add_argument('--lr', type=float, default=1e-4,
                         help='Learning rate for pretraining [default: 1e-4]')
+    parser.add_argument('--num-workers', type=int, default=None,
+                        help='Parallel workers for expert data collection (default: CPU count)')
     parser.add_argument('--rl-steps', type=int, default=300000,
                         help='Number of RL training steps [default: 300000]')
     parser.add_argument('--num-envs', type=int, default=8,
@@ -138,6 +140,7 @@ def main():
     print(f"  Mines:             {args.mines}")
     print(f"{CYAN}Pretraining:{RESET}")
     print(f"  Expert episodes:   {args.expert_episodes} (winning only)")
+    print(f"  Parallel workers:  {args.num_workers or 'auto (CPU count)'}")
     print(f"  Updates:           {args.num_updates}")
     print(f"  Batch size:        {args.batch_size}")
     print(f"  Learning rate:     {args.lr}")
@@ -177,6 +180,10 @@ def main():
             '--batch-size', str(args.batch_size),
             '--lr', str(args.lr)
         ]
+        
+        # Add num-workers if specified
+        if args.num_workers is not None:
+            pretrain_cmd.extend(['--num-workers', str(args.num_workers)])
         
         success = run_command(pretrain_cmd, "STAGE 1: Pretraining (Imitation Learning)")
         
