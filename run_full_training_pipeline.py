@@ -114,12 +114,20 @@ def main():
                         help='Number of WINNING episodes to collect for pretraining [default: 10000]')
     parser.add_argument('--num-updates', type=int, default=100000,
                         help='Number of pretraining optimization updates [default: 100000]')
+    parser.add_argument('--batch-size', type=int, default=128,
+                        help='Batch size for pretraining [default: 128]')
+    parser.add_argument('--lr', type=float, default=1e-4,
+                        help='Learning rate for pretraining [default: 1e-4]')
     parser.add_argument('--rl-steps', type=int, default=300000,
                         help='Number of RL training steps [default: 300000]')
     parser.add_argument('--num-envs', type=int, default=8,
                         help='Parallel environments for RL training [default: 8]')
-    parser.add_argument('--skip-pretrain', action='store_true',
-                        help='Skip pretraining if checkpoint already exists')
+    parser.add_argument('--rl-batch-size', type=int, default=256,
+                        help='Batch size for RL training [default: 256]')
+    parser.add_argument('--rl-lr', type=float, default=1e-4,
+                        help='Learning rate for RL training [default: 1e-4]')
+    parser.add_argument('--force-pretrain', action='store_true',
+                        help='Force retraining even if checkpoint already exists')
     
     args = parser.parse_args()
     
@@ -128,17 +136,24 @@ def main():
     print(f"{CYAN}Configuration:{RESET}")
     print(f"  Board size:        {args.size}×{args.size}×{args.size}")
     print(f"  Mines:             {args.mines}")
+    print(f"{CYAN}Pretraining:{RESET}")
     print(f"  Expert episodes:   {args.expert_episodes} (winning only)")
-    print(f"  Pretraining updates: {args.num_updates}")
-    print(f"  RL training steps: {args.rl_steps}")
+    print(f"  Updates:           {args.num_updates}")
+    print(f"  Batch size:        {args.batch_size}")
+    print(f"  Learning rate:     {args.lr}")
+    print(f"{CYAN}RL Training:{RESET}")
+    print(f"  Training steps:    {args.rl_steps}")
     print(f"  Parallel envs:     {args.num_envs}")
+    print(f"  Batch size:        {args.rl_batch_size}")
+    print(f"  Learning rate:     {args.rl_lr}")
     
     # Check for existing pretrained checkpoint
     pretrained_checkpoint = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
     checkpoint_exists = Path(pretrained_checkpoint).exists()
     
-    if checkpoint_exists and args.skip_pretrain:
+    if checkpoint_exists and not args.force_pretrain:
         print(f"\n{YELLOW}[SKIP] Skipping pretraining - checkpoint exists: {pretrained_checkpoint}{RESET}")
+        print(f"{YELLOW}       Use --force-pretrain to overwrite existing checkpoint{RESET}")
         skip_stage1 = True
     else:
         skip_stage1 = False
@@ -158,7 +173,9 @@ def main():
             '--size', str(args.size),
             '--mines', str(args.mines),
             '--expert-episodes', str(args.expert_episodes),
-            '--num-updates', str(args.num_updates)
+            '--num-updates', str(args.num_updates),
+            '--batch-size', str(args.batch_size),
+            '--lr', str(args.lr)
         ]
         
         success = run_command(pretrain_cmd, "STAGE 1: Pretraining (Imitation Learning)")
@@ -181,7 +198,8 @@ def main():
         '--mines', str(args.mines),
         '--num-steps', str(args.rl_steps),
         '--num-envs', str(args.num_envs),
-        '--checkpoint', pretrained_checkpoint
+        '--batch-size', str(args.rl_batch_size),
+        '--lr', str(args.rl_lr)
     ]
     
     success = run_command(train_cmd, "STAGE 2: RL Training (Deep Q-Learning)")
