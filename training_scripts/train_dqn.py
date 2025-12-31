@@ -80,6 +80,7 @@ def main(size:int, mines:int, num_steps:int):
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
     checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
     
+    is_pretrained = False  # Track if loading from pretraining
     if checkpoints:
         load_path = checkpoints[-1]  # Latest training checkpoint
         print(f"Found training checkpoint: {load_path}")
@@ -87,6 +88,7 @@ def main(size:int, mines:int, num_steps:int):
         pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
         if os.path.exists(pretrained_path):
             load_path = pretrained_path
+            is_pretrained = True
             print(f"Found pretrained checkpoint: {pretrained_path}")
         else:
             load_path = f"dqn-checkpoint-0.pth"
@@ -116,6 +118,21 @@ def main(size:int, mines:int, num_steps:int):
         try:
             start_step = agent.load_checkpoint(load_path)
             print(f"Loaded checkpoint {load_path} from step {start_step}")
+            
+            # if loading pretrained model, then we need
+            # to preserve learned policy instead of overwriting with random exploration
+            if is_pretrained:
+                agent.eps_start = 0.2  # Start at 20% exploration instead of 100%
+                agent.eps_decay_steps = 300000  # Slower decay (2x longer)
+                agent.total_steps = 0  # Reset for new epsilon schedule
+                
+                # Lower learning rate for fine-tuning to preserve pretrained knowledge
+                for param_group in agent.optim.param_groups:
+                    param_group['lr'] = args.lr * 0.5  # Half the learning rate
+                
+                print(f"[PRETRAINED] Adjusted hyperparameters:")
+                print(f"  - Epsilon: {agent.eps_start} → {agent.eps_end} over {agent.eps_decay_steps} steps")
+                print(f"  - Learning rate: {args.lr * 0.5} (50% of normal for fine-tuning)")
         except RuntimeError as e:
             if "size mismatch" in str(e):
                 print(f"Warning: Checkpoint architecture mismatch (old 1-channel vs new 3-channel model)")
