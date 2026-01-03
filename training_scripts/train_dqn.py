@@ -192,11 +192,16 @@ def main(size:int, mines:int, num_steps:int):
                 loss_dict["loss"].append(float(loss_value))
 
     else: 
-        with open(f"./metrics/s{size}-m{mines}/metrics.log", "w", encoding="utf-8") as file: 
-            file.write("")
+        # Don't clear log files even with --fresh to preserve training history
+        # Just start with empty in-memory data structures
+        # Create files if they don't exist
+        if not os.path.exists(f"./metrics/s{size}-m{mines}/metrics.log"):
+            with open(f"./metrics/s{size}-m{mines}/metrics.log", "w", encoding="utf-8") as file: 
+                file.write("")
 
-        with open(f"./metrics/s{size}-m{mines}/loss.log", "w", encoding="utf-8") as file: 
-            file.write("")
+        if not os.path.exists(f"./metrics/s{size}-m{mines}/loss.log"):
+            with open(f"./metrics/s{size}-m{mines}/loss.log", "w", encoding="utf-8") as file: 
+                file.write("")
 
     # Timing for progress tracking
     start_time = time.time()
