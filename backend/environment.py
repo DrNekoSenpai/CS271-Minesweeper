@@ -100,20 +100,22 @@ class MinesweeperEnv(gym.Env):
         new_visible = np.sum(self.game.visible >= 0)
         delta = int(new_visible - prev_visible)
 
-        # Base reward: tiles revealed
-        reward = float(delta)
+        # Base reward: tiles revealed (stronger signal)
+        reward = float(delta) * 2.0  # 2x multiplier for each tile revealed
         
         # Bonus for progress toward completion
         total_safe = self.width * self.height * self.depth - self.num_mines
         progress = new_visible / total_safe
         
-        # Add progress bonus (small but meaningful)
+        # Progress bonus (stronger gradient)
         if delta > 0:
-            reward += progress * 5.0  # Max +5 when near completion
+            reward += progress * 10.0  # Bigger bonus near completion
         
-        # Bonus for high-value reveals (flood fills are good)
+        # Bonus for high-value reveals (flood fills are very good)
         if delta > 5:
-            reward += 2.0
+            reward += 5.0  # Stronger bonus for flood fills
+        if delta > 10:
+            reward += 10.0  # Extra bonus for large reveals
         
         safe_tiles = max(delta, 0)
 
