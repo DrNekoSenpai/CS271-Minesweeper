@@ -67,6 +67,7 @@ def run_command(cmd, description):
         import os
         env = os.environ.copy()
         env['PYTHONPATH'] = str(project_root)
+        env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output
         
         # Run command with real-time output
         process = subprocess.Popen(

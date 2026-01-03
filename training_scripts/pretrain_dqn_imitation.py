@@ -224,8 +224,8 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
                 avg_loss = np.mean(losses[-100:])
                 iterator.set_postfix({'avg_loss': f'{avg_loss:.4f}'})
     
-    avg_loss = np.mean(losses) if losses else 0.0
-    print(f"\nPre-training complete! Average loss: {avg_loss:.4f}")
+    avg_loss = np.mean(losses[-10000:]) if len(losses) >= 10000 else np.mean(losses) if losses else 0.0
+    print(f"\nPre-training complete! Average loss (last 10k): {avg_loss:.4f}")
     
     return losses
 

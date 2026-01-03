@@ -2,9 +2,15 @@ import argparse
 import numpy as np
 import gymnasium as gym
 import os
+import sys
 import matplotlib.pyplot as plt 
 import re
 import time
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.absolute()
+sys.path.insert(0, str(project_root))
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
@@ -131,7 +137,7 @@ def main(size:int, mines:int, num_steps:int):
                     param_group['lr'] = args.lr * 0.5  # Half the learning rate
                 
                 print(f"[PRETRAINED] Adjusted hyperparameters:")
-                print(f"  - Epsilon: {agent.eps_start} → {agent.eps_end} over {agent.eps_decay_steps} steps")
+                print(f"  - Epsilon: {agent.eps_start} -> {agent.eps_end} over {agent.eps_decay_steps} steps")
                 print(f"  - Learning rate: {args.lr * 0.5} (50% of normal for fine-tuning)")
         except RuntimeError as e:
             if "size mismatch" in str(e):
