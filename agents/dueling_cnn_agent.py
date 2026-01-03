@@ -532,10 +532,6 @@ class DuelingDCNNAgent:
         actions_t = torch.from_numpy(actions).to(self.device).unsqueeze(1)
         rewards_t = torch.from_numpy(rewards).to(self.device)
         done_t = torch.from_numpy(done).to(self.device)
-        
-        # Reward normalization: scale down large terminal rewards
-        # Terminal: ±100 -> ±1, Non-terminal: 0-26 -> 0-0.26
-        rewards_t = rewards_t / 100.0
 
         # Current Q(s,a)
         q = self.online(obs_t).gather(1, actions_t).squeeze(1)
