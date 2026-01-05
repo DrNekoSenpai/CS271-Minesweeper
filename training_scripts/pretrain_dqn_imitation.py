@@ -10,7 +10,6 @@ This gives the DQN a warm start with good behavior patterns.
 
 import argparse
 import numpy as np
-from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
@@ -65,8 +64,8 @@ def _collect_single_episode(args_tuple):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Only return winning episodes
-        if reward == 100.0:
+        # Only return winning episodes (win reward is 500.0)
+        if reward == 500.0:
             return episode_transitions, steps, attempts
         # Otherwise, loop and try again
 
@@ -106,14 +105,26 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, n
     # Prepare arguments for each episode
     episode_args = [(size, mines, i) for i in range(num_episodes)]
     
-    # Collect episodes in parallel with progress bar
+    # Collect episodes in parallel with progress updates
     with Pool(processes=num_workers) as pool:
         if verbose:
-            results = list(tqdm(
-                pool.imap_unordered(_collect_single_episode, episode_args),
-                total=num_episodes,
-                desc="Collecting episodes"
-            ))
+            import time
+            start_time = time.time()
+            print(f"Progress: 0/{num_episodes} episodes collected (0.0 eps/sec)", end='', flush=True)
+            completed = 0
+            results = []
+            # Use imap_unordered for incremental results
+            for result in pool.imap_unordered(_collect_single_episode, episode_args):
+                results.append(result)
+                completed += 1
+                # Print progress every 10 episodes or at completion
+                if completed % 10 == 0 or completed == num_episodes:
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    print(f"\rProgress: {completed}/{num_episodes} episodes collected ({rate:.1f} eps/sec)", end='', flush=True)
+            elapsed = time.time() - start_time
+            rate = completed / elapsed if elapsed > 0 else 0
+            print(f"\rProgress: {completed}/{num_episodes} episodes collected ({rate:.1f} eps/sec) - Complete!")
         else:
             results = pool.map(_collect_single_episode, episode_args)
     
@@ -147,7 +158,11 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
     losses = 0
     episode_lengths = []
     
-    iterator = tqdm(range(num_episodes), desc="Collecting episodes") if verbose else range(num_episodes)
+    if verbose:
+        import time
+        start_time = time.time()
+        print(f"Progress: 0/{num_episodes} episodes collected (0.0 eps/sec)", end='', flush=True)
+    
     episodes_collected = 0
     
     while episodes_collected < num_episodes:
@@ -165,15 +180,22 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        if reward == 100.0:
+        if reward == 500.0:  # Win (updated reward)
             trajectories.extend(episode_transitions)
             wins += 1
             episode_lengths.append(steps)
             episodes_collected += 1
-            if verbose:
-                iterator.update(1)
+            if verbose and (episodes_collected % 10 == 0 or episodes_collected == num_episodes):
+                elapsed = time.time() - start_time
+                rate = episodes_collected / elapsed if elapsed > 0 else 0
+                print(f"\rProgress: {episodes_collected}/{num_episodes} episodes collected ({rate:.1f} eps/sec)", end='', flush=True)
         else:
             losses += 1
+    
+    if verbose:
+        elapsed = time.time() - start_time
+        rate = episodes_collected / elapsed if elapsed > 0 else 0
+        print(f"\rProgress: {episodes_collected}/{num_episodes} episodes collected ({rate:.1f} eps/sec) - Complete!")
     
     if verbose:
         total_attempts = wins + losses
@@ -212,17 +234,28 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
     print(f"Buffer size: {len(agent.buffer)}")
     print(f"Performing {num_updates} pre-training updates...")
     
-    losses = []
-    iterator = tqdm(range(num_updates)) if verbose else range(num_updates)
+    import time
+    start_time = time.time()
+    print(f"Progress: 0/{num_updates} updates (0.0 upd/sec)", end='', flush=True)
     
-    for update in iterator:
+    losses = []
+    
+    for update in range(num_updates):
         stats = agent.optimize()
         if stats:
             losses.append(stats['loss'])
             
             if verbose and (update + 1) % 100 == 0:
                 avg_loss = np.mean(losses[-100:])
-                iterator.set_postfix({'avg_loss': f'{avg_loss:.4f}'})
+                elapsed = time.time() - start_time
+                rate = (update + 1) / elapsed if elapsed > 0 else 0
+                print(f"\rProgress: {update + 1}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
+    
+    if verbose:
+        elapsed = time.time() - start_time
+        rate = num_updates / elapsed if elapsed > 0 else 0
+        avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
+        print(f"\rProgress: {num_updates}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f}) - Complete!")
     
     avg_loss = np.mean(losses[-10000:]) if len(losses) >= 10000 else np.mean(losses) if losses else 0.0
     print(f"\nPre-training complete! Average loss (last 10k): {avg_loss:.4f}")

@@ -69,31 +69,39 @@ def run_command(cmd, description):
         env['PYTHONPATH'] = str(project_root)
         env['PYTHONUNBUFFERED'] = '1'  # Force unbuffered output
         
-        # Run command with real-time output
+        # Run command with inherited stdout/stderr for real-time output and keyboard interrupts
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            stdout=None,  # Inherit stdout (allows tqdm progress bars)
+            stderr=None,  # Inherit stderr
             env=env,
             cwd=str(project_root)
         )
         
-        # Stream output line by line
-        for line in process.stdout:
-            print(line, end='')
-        
-        # Wait for completion
+        # Wait for completion (allows Ctrl+C to propagate)
         process.wait()
         elapsed = time.time() - start_time
         
         if process.returncode == 0:
             print(f"\n{GREEN}[PASS] {description} completed successfully{RESET} ({elapsed:.1f}s)")
             return True
+        elif process.returncode == -2 or process.returncode == 130:  # Ctrl+C on Unix/Windows
+            print(f"\n{YELLOW}[INTERRUPTED] {description} was interrupted by user{RESET}")
+            return False
         else:
             print(f"\n{RED}[FAIL] {description} failed{RESET} (exit code: {process.returncode}, {elapsed:.1f}s)")
             return False
+    
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}[INTERRUPTED] {description} was interrupted by user{RESET}")
+        # Terminate the subprocess if it's still running
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        return False
             
     except Exception as e:
         print(f"\n{RED}[ERROR] Error running {description}: {str(e)}{RESET}")
