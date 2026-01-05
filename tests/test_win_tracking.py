@@ -21,9 +21,9 @@ for ep in range(50):
         if done:
             final_reward = reward
     
-    # Check consistency
+    # Check consistency (win reward is 500.0, loss is -100.0)
     game_win = env.game.win
-    reward_win = (final_reward == 100.0)
+    reward_win = (final_reward == 500.0)
     
     if game_win != reward_win:
         print(f"MISMATCH! Episode {ep}: game.win={game_win}, reward={final_reward}")
@@ -35,4 +35,12 @@ for ep in range(50):
 print(f"\nResults:")
 print(f"  Wins: {wins}/50 ({wins/50*100:.1f}%)")
 print(f"  Mismatches: {mismatches}")
-print(f"\n{'[PASS] Win tracking is correct!' if mismatches == 0 else '[FAIL] Win tracking has bugs!'}")
+
+if mismatches == 0:
+    print(f"\n[PASS] Win tracking is correct!")
+    import sys
+    sys.exit(0)
+else:
+    print(f"\n[FAIL] Win tracking has bugs!")
+    import sys
+    sys.exit(1)

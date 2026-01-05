@@ -115,6 +115,9 @@ def run_test(test_info):
         if result.returncode == 0:
             print(f"\n{GREEN}✓ {test_info['name']} PASSED{RESET} ({elapsed:.1f}s)")
             return True
+        elif result.returncode == 2:
+            print(f"\n{YELLOW}⊘ {test_info['name']} SKIPPED{RESET} ({elapsed:.1f}s)")
+            return None  # None = skipped
         else:
             print(f"\n{RED}✗ {test_info['name']} FAILED{RESET} (exit code: {result.returncode}, {elapsed:.1f}s)")
             return False

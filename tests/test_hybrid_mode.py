@@ -1,12 +1,21 @@
 """Test if hybrid mode and safe action detection works"""
 import torch
 import numpy as np
+import os
+import sys
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
 
+# Check if checkpoint exists
+checkpoint_path = "dqn-checkpoint-s5-m8-400000.pth"
+if not os.path.exists(checkpoint_path):
+    print(f"[SKIP] Checkpoint file not found: {checkpoint_path}")
+    print("This test requires a trained DQN checkpoint to run.")
+    sys.exit(2)  # Exit code 2 = skipped
+
 # Load agent
 agent = DuelingDCNNAgent(height=5, width=5, depth=5, device='cpu')
-checkpoint = torch.load("dqn-checkpoint-s5-m8-400000.pth", map_location='cpu')
+checkpoint = torch.load(checkpoint_path, map_location='cpu')
 agent.online.load_state_dict(checkpoint['online_state'])
 agent.target.load_state_dict(checkpoint['target_state'])
 agent.total_steps = agent.eps_decay_steps  # No exploration

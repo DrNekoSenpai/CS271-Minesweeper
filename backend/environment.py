@@ -86,7 +86,7 @@ class MinesweeperEnv(gym.Env):
         if self.game.game_over:
             terminated = True
             truncated = False
-            reward = 100.0 if self.game.win else -100.0
+            reward = 500.0 if self.game.win else -100.0  # Much larger win bonus to incentivize winning
             safe_move = 1 if self.game.win else 0
             new_visible = np.sum(self.game.visible >= 0)
             safe_tiles = max(new_visible - prev_visible, 0)

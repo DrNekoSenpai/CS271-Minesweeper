@@ -9,6 +9,7 @@ This script:
 
 import torch
 import numpy as np
+import os
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
 
@@ -108,6 +109,12 @@ def main():
     print("-" * 70)
     pretrained_agent = DuelingDCNNAgent(height=size, width=size, depth=size, device='cpu')
     pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
+    
+    if not os.path.exists(pretrained_path):
+        print(f"[SKIP] Checkpoint file not found: {pretrained_path}")
+        print("This test requires pretrained and trained DQN checkpoints to run.")
+        import sys
+        sys.exit(2)  # Exit code 2 = skipped
     
     checkpoint = torch.load(pretrained_path, map_location='cpu')
     pretrained_agent.online.load_state_dict(checkpoint['online_state'])
