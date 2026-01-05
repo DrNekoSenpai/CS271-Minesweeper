@@ -80,7 +80,7 @@ def main(size:int, mines:int, num_steps:int):
     recent_rewards = []
     recent_safe_moves = []
     recent_safe_tiles = []
-    recent_wins = []  # Track actual wins (reward == 100)
+    recent_wins = []  # Track actual wins (reward == 500.0)
 
     # Look for training checkpoints first, then pretrained as fallback
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
@@ -225,8 +225,8 @@ def main(size:int, mines:int, num_steps:int):
             episode_safe_moves[i] += safe_batch[i]
             episode_safe_tiles[i] += tile_batch[i]
             
-            # Track actual wins: terminal reward == 100 (revealed all non-mine tiles)
-            if done[i] and rewards[i] == 100.0:
+            # Track actual wins: terminal reward == 500.0 (revealed all non-mine tiles)
+            if done[i] and rewards[i] == 500.0:
                 recent_wins.append(1)
             elif done[i]:
                 recent_wins.append(0)
@@ -268,7 +268,7 @@ def main(size:int, mines:int, num_steps:int):
                     avg_safe_moves = np.mean(recent_safe_moves[-100:])
                     avg_safe_tiles = np.mean(recent_safe_tiles[-100:])
                     
-                    # True wins: episodes that ended with reward == 100
+                    # True wins: episodes that ended with reward == 500.0
                     actual_wins = sum(recent_wins[-100:]) if len(recent_wins) >= 100 else sum(recent_wins)
                     episodes_counted = min(100, len(recent_wins))
                     
