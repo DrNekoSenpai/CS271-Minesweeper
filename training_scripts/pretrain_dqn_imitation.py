@@ -11,6 +11,8 @@ This gives the DQN a warm start with good behavior patterns.
 import argparse
 import numpy as np
 from multiprocessing import Pool, cpu_count
+import pickle
+import os
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from agents.bayesian_approximation_agent import Agent as BayesianAgent
@@ -212,7 +214,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
     return trajectories
 
 
-def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True):
+def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000):
     """
     Pre-train DQN agent on expert trajectories.
     
@@ -222,6 +224,8 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         num_updates: Number of gradient updates to perform
         batch_size: Training batch size
         verbose: Print progress
+        checkpoint_prefix: Prefix for checkpoint filenames
+        save_every: Save checkpoint every N updates
         
     Returns:
         losses: List of training losses
@@ -233,6 +237,7 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
     
     print(f"Buffer size: {len(agent.buffer)}")
     print(f"Performing {num_updates} pre-training updates...")
+    print(f"Saving checkpoints every {save_every} updates to {checkpoint_prefix}-XXXXX.pth")
     
     import time
     start_time = time.time()
@@ -250,6 +255,14 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
                 elapsed = time.time() - start_time
                 rate = (update + 1) / elapsed if elapsed > 0 else 0
                 print(f"\rProgress: {update + 1}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
+        
+        # Save checkpoint periodically
+        if (update + 1) % save_every == 0:
+            checkpoint_path = f"{checkpoint_prefix}-{update + 1}.pth"
+            agent.save_checkpoint(checkpoint_path, step=update + 1)
+            avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
+            print(f"\n[Checkpoint] Saved {checkpoint_path} (avg_loss: {avg_loss:.4f})")
+            print(f"Progress: {update + 1}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
     
     if verbose:
         elapsed = time.time() - start_time
@@ -295,18 +308,38 @@ def main():
         render_mode=None
     )
     
-    # Create expert agent (Bayesian)
-    print("\nCreating expert agent (Bayesian)...")
-    expert = BayesianAgent(
-        env.action_space,
-        height=args.size,
-        width=args.size,
-        depth=args.size,
-        num_mines=args.mines
-    )
+    # Check for cached expert trajectories
+    expert_cache_path = f"expert_trajectories_s{args.size}_m{args.mines}_n{args.expert_episodes}.pkl"
+    
+    if os.path.exists(expert_cache_path):
+        print(f"\n[CACHE] Found cached expert trajectories: {expert_cache_path}")
+        print(f"Loading cached data...")
+        with open(expert_cache_path, 'rb') as f:
+            trajectories = pickle.load(f)
+        print(f"Loaded {len(trajectories)} transitions from cache")
+    else:
+        # Create expert agent (Bayesian)
+        print("\nCreating expert agent (Bayesian)...")
+        expert = BayesianAgent(
+            env.action_space,
+            height=args.size,
+            width=args.size,
+            depth=args.size,
+            num_mines=args.mines
+        )
+        
+        # Collect expert trajectories
+        print(f"\nCollecting {args.expert_episodes} winning episodes from expert...")
+        trajectories = collect_expert_trajectories(env, expert, args.expert_episodes, num_workers=args.num_workers)
+        
+        # Cache the trajectories for future use
+        print(f"\n[CACHE] Saving expert trajectories to: {expert_cache_path}")
+        with open(expert_cache_path, 'wb') as f:
+            pickle.dump(trajectories, f)
+        print(f"Expert data cached successfully!")
     
     # Create DQN agent
-    print("Creating DQN agent...")
+    print("\nCreating DQN agent...")
     agent = DuelingDCNNAgent(
         height=args.size,
         width=args.size,
@@ -314,7 +347,7 @@ def main():
         lr=args.lr,
         batch_size=args.batch_size,
         warmup=0,  # No warmup needed, we're filling buffer manually
-        target_update=1000,
+        target_update=500,  # More frequent updates for stability
         buffer_size=200000,
         eps_decay_steps=150000,
         # !!!!! 5070 pytorch issue workaround !!!!!
@@ -322,15 +355,13 @@ def main():
     )
     print(f"Using device: {agent.device}")
     
-    # Collect expert trajectories
-    print(f"\nCollecting {args.expert_episodes} winning episodes from expert...")
-    trajectories = collect_expert_trajectories(env, expert, args.expert_episodes, num_workers=args.num_workers)
-    
     # Pre-train on expert data
     print("\nPre-training DQN on expert trajectories...")
-    losses = pretrain_from_expert(agent, trajectories, args.num_updates, args.batch_size)
+    checkpoint_prefix = f"dqn-pretrain-s{args.size}-m{args.mines}"
+    losses = pretrain_from_expert(agent, trajectories, args.num_updates, args.batch_size, 
+                                  checkpoint_prefix=checkpoint_prefix, save_every=5000)
     
-    # Save checkpoint
+    # Save final checkpoint
     if args.output is None:
         args.output = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
     
