@@ -59,11 +59,11 @@ for ep in range(10):
     safe_moves_used += episode_safe
     dqn_moves += episode_dqn
     
-    if reward == 100.0:
+    if reward == 10.0:
         wins += 1
     
     print(f"Episode {ep+1}: {moves} moves, {episode_safe} safe, {episode_dqn} DQN, "
-          f"{'WIN' if reward == 100.0 else 'LOSS'}")
+          f"{'WIN' if reward == 10.0 else 'LOSS'}")
 
 print(f"\nSummary:")
 print(f"  Total moves: {total_moves}")

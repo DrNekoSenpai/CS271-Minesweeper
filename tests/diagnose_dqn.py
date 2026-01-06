@@ -76,7 +76,7 @@ def test_performance(agent, env, num_episodes=100, verbose=False):
         rewards_list.append(total_reward)
         total_moves += moves
         
-        if reward == 100.0:
+        if reward == 10.0:
             wins += 1
         else:
             losses += 1

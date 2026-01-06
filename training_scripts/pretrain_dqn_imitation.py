@@ -64,8 +64,8 @@ def _collect_single_episode(args_tuple):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Only return winning episodes (win reward is 500.0)
-        if reward == 500.0:
+        # Only return winning episodes (win reward is 10.0)
+        if reward == 10.0:
             return episode_transitions, steps, attempts
         # Otherwise, loop and try again
 
@@ -180,7 +180,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        if reward == 500.0:  # Win (updated reward)
+        if reward == 10.0:  # Win (updated reward)
             trajectories.extend(episode_transitions)
             wins += 1
             episode_lengths.append(steps)

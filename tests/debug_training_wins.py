@@ -57,15 +57,15 @@ for step in range(1000):
             # Record terminal reward
             terminal_rewards_seen.append(rewards[i])
             
-            # Check win condition (win=500.0, loss=-100.0)
-            if rewards[i] == 500.0:
+            # Check win condition (win=10.0, loss=-10.0)
+            if rewards[i] == 10.0:
                 recent_wins.append(1)
                 print(f"[WIN] Win detected! Env {i}, step {step}, terminal_reward={rewards[i]:.1f}, episode_total={episode_rewards[i]:.1f}")
-            elif rewards[i] == -100.0:
+            elif rewards[i] == -10.0:
                 recent_wins.append(0)
             else:
                 recent_wins.append(0)
-                print(f"[ERROR] Terminal but reward is {rewards[i]:.1f}, not 500.0/-100.0! Env {i}, step {step}")
+                print(f"[ERROR] Terminal but reward is {rewards[i]:.1f}, not 10.0/-10.0! Env {i}, step {step}")
             
             recent_rewards.append(episode_rewards[i])
             episode_rewards[i] = 0.0
@@ -84,19 +84,19 @@ print(f"Total episodes completed: {completed}")
 print(f"Total wins: {sum(recent_wins)}")
 print(f"Win rate: {sum(recent_wins)/max(1,completed)*100:.1f}%")
 print(f"\nTerminal rewards seen: {len(terminal_rewards_seen)}")
-print(f"  +500.0 (win) count: {sum(1 for r in terminal_rewards_seen if r == 500.0)}")
-print(f"  -100.0 (loss) count: {sum(1 for r in terminal_rewards_seen if r == -100.0)}")
-print(f"  Other count: {sum(1 for r in terminal_rewards_seen if r != 500.0 and r != -100.0)}")
+print(f"  +10.0 (win) count: {sum(1 for r in terminal_rewards_seen if r == 10.0)}")
+print(f"  -10.0 (loss) count: {sum(1 for r in terminal_rewards_seen if r == -10.0)}")
+print(f"  Other count: {sum(1 for r in terminal_rewards_seen if r != 10.0 and r != -10.0)}")
 
-# Check for terminal rewards (win=500.0, loss=-100.0 in current environment)
-if any(r != 500.0 and r != -100.0 for r in terminal_rewards_seen):
-    print(f"\n[WARNING] BUG FOUND: Terminal rewards that aren't 500.0/-100.0!")
-    weird_rewards = [r for r in terminal_rewards_seen if r != 500.0 and r != -100.0]
+# Check for terminal rewards (win=10.0, loss=-10.0 in current environment)
+if any(r != 10.0 and r != -10.0 for r in terminal_rewards_seen):
+    print(f"\n[WARNING] BUG FOUND: Terminal rewards that aren't 10.0/-10.0!")
+    weird_rewards = [r for r in terminal_rewards_seen if r != 10.0 and r != -10.0]
     print(f"  Weird rewards: {weird_rewards[:10]}")
     import sys
     sys.exit(1)
 else:
-    print(f"\n[PASS] All terminal rewards are correctly 500.0/-100.0")
+    print(f"\n[PASS] All terminal rewards are correctly 10.0/-10.0")
     print(f"[INFO] No bugs found in win tracking!")
     import sys
     sys.exit(0)

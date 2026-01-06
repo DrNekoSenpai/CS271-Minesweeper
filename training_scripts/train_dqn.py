@@ -33,8 +33,8 @@ def main(size:int, mines:int, num_steps:int):
     parser.add_argument("--mines", type=int, default=mines, help="Number of mines")
     parser.add_argument("--num-steps", type=int, default=num_steps, help="Total training steps")
     parser.add_argument("--num-envs", type=int, default=16, help="Parallel environments (higher = more GPU usage)")
-    parser.add_argument("--batch-size", type=int, default=256, help="Training batch size (higher = more GPU usage)")
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--batch-size", type=int, default=128, help="Training batch size (higher = more GPU usage)")
+    parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
     
@@ -61,7 +61,7 @@ def main(size:int, mines:int, num_steps:int):
         lr=args.lr,
         batch_size=args.batch_size,
         warmup=5000,
-        target_update=1000, 
+        target_update=200, 
         buffer_size=200000, 
         eps_decay_steps=150000,
         # !!!!! 5070 pytorch issue workaround !!!!!
@@ -310,7 +310,7 @@ def main(size:int, mines:int, num_steps:int):
             # Only log loss when training occurred
             if stats is not None:
                 with open(f'./metrics/s{size}-m{mines}/loss.log', 'a', encoding="utf-8") as file: 
-                    file.write(f"[step={step}]: {stats['loss']:.6f}\n")
+                    file.write(f"[step={step}]: loss={stats['loss']:.6f} grad_norm={stats.get('grad_norm', 0):.6f} q_mean={stats.get('q_mean', 0):.6f} target_mean={stats.get('target_mean', 0):.6f}\n")
                     loss_dict["loss"].append(np.round(stats['loss'], 6))
                     loss_dict["steps"].append(step)
 

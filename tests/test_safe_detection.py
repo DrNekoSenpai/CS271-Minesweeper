@@ -55,5 +55,5 @@ for ep in range(5):
             dqn_moves += 1
             print(f"  Move {moves}: DQN choice (zeros={num_zeros}, unrevealed={num_unrevealed}, safe_avail={safe_actions.size}, reward={reward:.1f})")
     
-    result = "WIN" if reward == 100.0 else "LOSS"
+    result = "WIN" if reward == 10.0 else "LOSS"
     print(f"Result: {result} - {moves} moves ({safe_moves} safe, {dqn_moves} DQN)\n")

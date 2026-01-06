@@ -166,7 +166,7 @@ class DuelingDCNNAgent:
         batch_size: int = 64,
         buffer_size: int = 200_000,
         warmup: int = 2_000,
-        target_update: int = 1_000,
+        target_update: int = 250,
         eps_start: float = 1.0,
         eps_end: float = 0.05,
         eps_decay_steps: int = 400_000,
@@ -530,7 +530,9 @@ class DuelingDCNNAgent:
         next_obs_t = self.obs_to_tensor(next_obs)
 
         actions_t = torch.from_numpy(actions).to(self.device).unsqueeze(1)
-        rewards_t = torch.from_numpy(rewards).to(self.device)
+        # Clip rewards to [-10, 10] range for stability
+        rewards_clipped = np.clip(rewards, -10.0, 10.0)
+        rewards_t = torch.from_numpy(rewards_clipped).to(self.device)
         done_t = torch.from_numpy(done).to(self.device)
 
         # Current Q(s,a)
@@ -554,6 +556,14 @@ class DuelingDCNNAgent:
 
         self.optim.zero_grad()
         loss.backward()
+        
+        # Track gradient norm before clipping
+        grad_norm = 0.0
+        for p in self.online.parameters():
+            if p.grad is not None:
+                grad_norm += p.grad.data.norm(2).item() ** 2
+        grad_norm = grad_norm ** 0.5
+        
         nn.utils.clip_grad_norm_(self.online.parameters(), self.grad_clip)
         self.optim.step()
 
@@ -561,7 +571,12 @@ class DuelingDCNNAgent:
         if self.total_steps % self.target_update == 0:
             self.target.load_state_dict(self.online.state_dict())
 
-        return {"loss": float(loss.item())}
+        return {
+            "loss": float(loss.item()),
+            "grad_norm": float(grad_norm),
+            "q_mean": float(q.mean().item()),
+            "target_mean": float(target.mean().item())
+        }
 
     def save_checkpoint(self, path: str, step: int) -> None:
         """
