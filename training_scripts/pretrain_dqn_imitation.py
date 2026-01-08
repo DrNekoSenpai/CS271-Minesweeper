@@ -283,7 +283,7 @@ def main():
     parser.add_argument("--expert-episodes", type=int, default=500, help="Number of episodes to collect from expert")
     parser.add_argument("--num-updates", type=int, default=5000, help="Number of training updates")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate (lower for stable pretraining)")
     parser.add_argument("--num-workers", type=int, default=None, help="Parallel workers for data collection (default: CPU count)")
     parser.add_argument("--output", type=str, default=None, help="Path to save pretrained checkpoint")
     args = parser.parse_args()
@@ -347,7 +347,7 @@ def main():
         lr=args.lr,
         batch_size=args.batch_size,
         warmup=0,  # No warmup needed, we're filling buffer manually
-        target_update=500,  # More frequent updates for stability
+        target_update=10000,  # Infrequent updates during pretraining (or keep target frozen)
         buffer_size=200000,
         eps_decay_steps=150000,
         # !!!!! 5070 pytorch issue workaround !!!!!

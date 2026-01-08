@@ -91,12 +91,33 @@ def main(size:int, mines:int, num_steps:int):
         load_path = checkpoints[-1]  # Latest training checkpoint
         print(f"Found training checkpoint: {load_path}")
     else:
-        pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
-        if os.path.exists(pretrained_path):
-            load_path = pretrained_path
-            is_pretrained = True
-            print(f"Found pretrained checkpoint: {pretrained_path}")
-        else:
+        # Check for both naming conventions: dqn-pretrained-* and dqn-pretrain-*
+        pretrained_patterns = [
+            f"dqn-pretrained-s{size}-m{mines}.pth",
+            f"dqn-pretrain-s{size}-m{mines}"  # Matches dqn-pretrain-s5-m5-*.pth
+        ]
+        
+        load_path = None
+        for pattern in pretrained_patterns:
+            # Look for exact match first
+            if os.path.exists(pattern):
+                load_path = pattern
+                is_pretrained = True
+                print(f"Found pretrained checkpoint: {load_path}")
+                break
+            
+            # Look for pattern matches (e.g., dqn-pretrain-s5-m5-30000.pth)
+            pretrain_checkpoints = sorted(
+                [f for f in os.listdir(".") if pattern in f and f.endswith(".pth")],
+                key=lambda x: int(x.split("-")[-1].split(".")[0])
+            )
+            if pretrain_checkpoints:
+                load_path = pretrain_checkpoints[-1]  # Latest pretrain checkpoint
+                is_pretrained = True
+                print(f"Found pretrained checkpoint: {load_path}")
+                break
+        
+        if load_path is None:
             load_path = f"dqn-checkpoint-0.pth"
 
     save_every = 5000
