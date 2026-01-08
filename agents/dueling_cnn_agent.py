@@ -216,6 +216,12 @@ class DuelingDCNNAgent:
 
         self.optim = torch.optim.Adam(self.online.parameters(), lr=lr)
         self.buffer = ReplayBuffer(buffer_size)
+        
+        # Mixed precision training (automatic if CUDA available)
+        self.use_amp = (self.device.type == 'cuda')
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
+        if self.use_amp:
+            print(f"Mixed precision training enabled (FP16) - expect ~2x speedup")
 
     # -------------------------
     # Action masking helpers
@@ -535,27 +541,34 @@ class DuelingDCNNAgent:
         rewards_t = torch.from_numpy(rewards_clipped).to(self.device)
         done_t = torch.from_numpy(done).to(self.device)
 
-        # Current Q(s,a)
-        q = self.online(obs_t).gather(1, actions_t).squeeze(1)
+        # Mixed precision training context
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            # Current Q(s,a)
+            q = self.online(obs_t).gather(1, actions_t).squeeze(1)
 
-        # -------- Double DQN with legality masking --------
-        with torch.no_grad():
-            # Online chooses next action among LEGAL moves
-            online_next_q = self.online(next_obs_t)  # (B, n_actions)
-            legal_mask = self.build_legal_mask(next_obs)  # (B, n_actions)
+            # -------- Double DQN with legality masking --------
+            with torch.no_grad():
+                # Online chooses next action among LEGAL moves
+                online_next_q = self.online(next_obs_t)  # (B, n_actions)
+                legal_mask = self.build_legal_mask(next_obs)  # (B, n_actions)
 
-            online_next_q = online_next_q.masked_fill(~legal_mask, -1e9)
-            next_actions = torch.argmax(online_next_q, dim=1, keepdim=True)
+                online_next_q = online_next_q.masked_fill(~legal_mask, -1e9)
+                next_actions = torch.argmax(online_next_q, dim=1, keepdim=True)
 
-            # Target evaluates those actions
-            target_next_q = self.target(next_obs_t).gather(1, next_actions).squeeze(1)
+                # Target evaluates those actions
+                target_next_q = self.target(next_obs_t).gather(1, next_actions).squeeze(1)
 
-            target = rewards_t + (1.0 - done_t) * self.gamma * target_next_q
+                target = rewards_t + (1.0 - done_t) * self.gamma * target_next_q
 
-        loss = F.smooth_l1_loss(q, target)
+            loss = F.smooth_l1_loss(q, target)
 
         self.optim.zero_grad()
-        loss.backward()
+        
+        # Scaled backward pass for mixed precision
+        if self.use_amp:
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
         
         # Track gradient norm before clipping
         grad_norm = 0.0
@@ -564,8 +577,17 @@ class DuelingDCNNAgent:
                 grad_norm += p.grad.data.norm(2).item() ** 2
         grad_norm = grad_norm ** 0.5
         
+        # Gradient clipping
+        if self.use_amp:
+            self.scaler.unscale_(self.optim)
         nn.utils.clip_grad_norm_(self.online.parameters(), self.grad_clip)
-        self.optim.step()
+        
+        # Optimizer step
+        if self.use_amp:
+            self.scaler.step(self.optim)
+            self.scaler.update()
+        else:
+            self.optim.step()
 
         # Update target periodically
         if self.total_steps % self.target_update == 0:
