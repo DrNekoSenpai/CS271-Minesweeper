@@ -3,7 +3,7 @@ Full training pipeline: Pretraining (imitation) → RL Training (DQN)
 Automates the two-stage training process so you don't need to manually run both commands.
 
 Stage 1: Pretraining (Imitation Learning)
-    - Collects winning episodes from Bayesian expert
+    - Collects episodes from Bayesian expert (wins + losses)
     - Trains DQN via behavioral cloning
     - Saves pretrained checkpoint
 
@@ -13,7 +13,7 @@ Stage 2: RL Training (Deep Q-Learning)
     - Saves checkpoints every 100k steps
 
 Usage:
-    # Default: 5x5x5 board, 8 mines, 10k winning episodes, 300k RL steps
+    # Default: 5x5x5 board, 8 mines, 10k episodes, 300k RL steps
     python run_full_training_pipeline.py
     
     # Custom configuration
@@ -25,7 +25,7 @@ Usage:
 Arguments:
     --size: Board size (creates size×size×size cube) [default: 5]
     --mines: Number of mines [default: 8]
-    --expert-episodes: Number of WINNING episodes to collect [default: 10000]
+    --expert-episodes: Number of episodes to collect (wins + losses) [default: 10000]
     --num-updates: Number of pretraining optimization updates [default: 100000]
     --rl-steps: Number of RL training steps [default: 300000]
     --num-envs: Parallel environments for RL training [default: 8]
@@ -121,7 +121,7 @@ def main():
     parser.add_argument('--mines', type=int, default=5,
                         help='Number of mines [default: 5]')
     parser.add_argument('--expert-episodes', type=int, default=10000,
-                        help='Number of WINNING episodes to collect for pretraining [default: 10000]')
+                        help='Number of episodes to collect for pretraining [default: 10000]')
     parser.add_argument('--num-updates', type=int, default=100000,
                         help='Number of pretraining optimization updates [default: 100000]')
     parser.add_argument('--batch-size', type=int, default=128,
@@ -149,7 +149,7 @@ def main():
     print(f"  Board size:        {args.size}×{args.size}×{args.size}")
     print(f"  Mines:             {args.mines}")
     print(f"{CYAN}Pretraining:{RESET}")
-    print(f"  Expert episodes:   {args.expert_episodes} (winning only)")
+    print(f"  Expert episodes:   {args.expert_episodes} (wins + losses)")
     print(f"  Parallel workers:  {args.num_workers or 'auto (CPU count)'}")
     print(f"  Updates:           {args.num_updates}")
     print(f"  Batch size:        {args.batch_size}")

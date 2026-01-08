@@ -13,6 +13,9 @@ import numpy as np
 from multiprocessing import Pool, cpu_count
 import pickle
 import os
+import re
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from agents.bayesian_approximation_agent import Agent as BayesianAgent
@@ -24,12 +27,12 @@ def _collect_single_episode(args_tuple):
     Worker function for parallel episode collection.
     
     Args:
-        args_tuple: (size, mines, episode_id) tuple
+        args_tuple: (size, mines, episode_id, wins_only) tuple
         
     Returns:
-        (trajectories, steps, attempts): Episode data, episode length, and number of attempts needed
+        (trajectories, steps, won): Episode data, episode length, and whether episode was won
     """
-    size, mines, episode_id = args_tuple
+    size, mines, episode_id, wins_only = args_tuple
     
     # Create fresh env and agent in this worker process
     env = MinesweeperEnv(
@@ -48,7 +51,7 @@ def _collect_single_episode(args_tuple):
         num_mines=mines
     )
     
-    # Keep trying until we get a win
+    # Collect episode(s) - retry until win if wins_only=True
     attempts = 0
     while True:
         attempts += 1
@@ -66,22 +69,26 @@ def _collect_single_episode(args_tuple):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Only return winning episodes (win reward is 10.0)
-        if reward == 10.0:
-            return episode_transitions, steps, attempts
-        # Otherwise, loop and try again
+        # Return episode (win reward is 10.0, loss is -10.0)
+        won = (reward == 10.0)
+        
+        # If collecting all episodes, return immediately
+        # If wins_only=True, retry until we get a win
+        if not wins_only or won:
+            return episode_transitions, steps, won, attempts
 
 
-def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, num_workers=None):
+def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, num_workers=None, wins_only=False):
     """
     Collect trajectories from expert agent (Bayesian) using parallel workers.
     
     Args:
         env: MinesweeperEnv instance (used for extracting config)
         expert_agent: Bayesian agent (not used in parallel version, kept for API compat)
-        num_episodes: Number of winning episodes to collect
+        num_episodes: Number of episodes to collect
         verbose: Print progress
         num_workers: Number of parallel workers (default: cpu_count())
+        wins_only: If True, only collect winning episodes. If False, collect all episodes.
         
     Returns:
         trajectories: List of (obs, action, reward, next_obs, done) tuples
@@ -91,7 +98,7 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, n
     
     if num_workers == 1:
         # Fall back to single-threaded for debugging or when explicitly requested
-        return _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose)
+        return _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose, wins_only)
     
     # Extract environment config
     size = env.height
@@ -99,13 +106,16 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, n
     
     trajectories = []
     episode_lengths = []
+    total_wins = 0
+    total_losses = 0
     total_attempts = 0
     
     if verbose:
-        print(f"Collecting {num_episodes} winning episodes using {num_workers} parallel workers...")
+        mode = "winning episodes only" if wins_only else "episodes (wins + losses)"
+        print(f"Collecting {num_episodes} {mode} using {num_workers} parallel workers...")
     
     # Prepare arguments for each episode
-    episode_args = [(size, mines, i) for i in range(num_episodes)]
+    episode_args = [(size, mines, i, wins_only) for i in range(num_episodes)]
     
     # Collect episodes in parallel with progress updates
     with Pool(processes=num_workers) as pool:
@@ -131,27 +141,40 @@ def collect_expert_trajectories(env, expert_agent, num_episodes, verbose=True, n
             results = pool.map(_collect_single_episode, episode_args)
     
     # Aggregate results
-    for episode_transitions, steps, attempts in results:
+    for episode_transitions, steps, won, attempts in results:
         trajectories.extend(episode_transitions)
         episode_lengths.append(steps)
         total_attempts += attempts
+        if won:
+            total_wins += 1
+        else:
+            total_losses += 1
     
     if verbose:
-        win_rate = (num_episodes / total_attempts) * 100 if total_attempts > 0 else 0
         avg_moves = np.mean(episode_lengths)
         print(f"\nExpert Agent Performance:")
-        print(f"  Winning episodes collected: {num_episodes}")
-        print(f"  Total attempts needed: {total_attempts}")
-        print(f"  Expert win rate: {win_rate:.1f}%")
+        print(f"  Episodes collected: {num_episodes}")
+        
+        if wins_only:
+            win_rate = (num_episodes / total_attempts) * 100 if total_attempts > 0 else 0
+            print(f"  Total attempts needed: {total_attempts}")
+            print(f"  Expert win rate: {win_rate:.1f}%")
+            print(f"  Average moves per winning episode: {avg_moves:.1f}")
+            print(f"  [INFO] Training ONLY on winning trajectories!")
+        else:
+            win_rate = (total_wins / num_episodes) * 100 if num_episodes > 0 else 0
+            print(f"  Wins: {total_wins} ({win_rate:.1f}%)")
+            print(f"  Losses: {total_losses} ({100-win_rate:.1f}%)")
+            print(f"  Average moves per episode: {avg_moves:.1f}")
+            print(f"  [INFO] Training on ALL trajectories (wins + losses)!")
+        
         print(f"  Parallel workers: {num_workers}")
-        print(f"  Average moves per winning episode: {avg_moves:.1f}")
         print(f"  Total transitions collected: {len(trajectories)}")
-        print(f"  [INFO] Training ONLY on winning trajectories!")
     
     return trajectories
 
 
-def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose=True):
+def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, verbose=True, wins_only=False):
     """
     Single-threaded version of trajectory collection (fallback).
     """
@@ -159,6 +182,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
     wins = 0
     losses = 0
     episode_lengths = []
+    total_attempts = 0
     
     if verbose:
         import time
@@ -166,8 +190,8 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
         print(f"Progress: 0/{num_episodes} episodes collected (0.0 eps/sec)", end='', flush=True)
     
     episodes_collected = 0
-    
     while episodes_collected < num_episodes:
+        total_attempts += 1
         obs, _ = env.reset()
         done = False
         steps = 0
@@ -182,39 +206,53 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        if reward == 10.0:  # Win (updated reward)
+        won = (reward == 10.0)
+        
+        # If collecting all episodes, or if wins_only and this is a win, add it
+        if not wins_only or won:
             trajectories.extend(episode_transitions)
-            wins += 1
             episode_lengths.append(steps)
             episodes_collected += 1
+            
+            if won:
+                wins += 1
+            else:
+                losses += 1
+        
             if verbose and (episodes_collected % 10 == 0 or episodes_collected == num_episodes):
                 elapsed = time.time() - start_time
                 rate = episodes_collected / elapsed if elapsed > 0 else 0
                 print(f"\rProgress: {episodes_collected}/{num_episodes} episodes collected ({rate:.1f} eps/sec)", end='', flush=True)
-        else:
-            losses += 1
     
     if verbose:
         elapsed = time.time() - start_time
-        rate = episodes_collected / elapsed if elapsed > 0 else 0
-        print(f"\rProgress: {episodes_collected}/{num_episodes} episodes collected ({rate:.1f} eps/sec) - Complete!")
+        rate = num_episodes / elapsed if elapsed > 0 else 0
+        print(f"\rProgress: {num_episodes}/{num_episodes} episodes collected ({rate:.1f} eps/sec) - Complete!")
     
     if verbose:
-        total_attempts = wins + losses
-        win_rate = (wins / total_attempts) * 100 if total_attempts > 0 else 0
         avg_moves = np.mean(episode_lengths)
         print(f"\nExpert Agent Performance:")
-        print(f"  Winning episodes collected: {wins}")
-        print(f"  Total attempts needed: {total_attempts}")
-        print(f"  Expert win rate: {win_rate:.1f}%")
-        print(f"  Average moves per winning episode: {avg_moves:.1f}")
+        print(f"  Episodes collected: {num_episodes}")
+        
+        if wins_only:
+            win_rate = (wins / total_attempts) * 100 if total_attempts > 0 else 0
+            print(f"  Total attempts needed: {total_attempts}")
+            print(f"  Expert win rate: {win_rate:.1f}%")
+            print(f"  Average moves per winning episode: {avg_moves:.1f}")
+            print(f"  [INFO] Training ONLY on winning trajectories!")
+        else:
+            win_rate = (wins / num_episodes) * 100 if num_episodes > 0 else 0
+            print(f"  Wins: {wins} ({win_rate:.1f}%)")
+            print(f"  Losses: {losses} ({100-win_rate:.1f}%)")
+            print(f"  Average moves per episode: {avg_moves:.1f}")
+            print(f"  [INFO] Training on ALL trajectories (wins + losses)!")
+        
         print(f"  Total transitions collected: {len(trajectories)}")
-        print(f"  [INFO] Training ONLY on winning trajectories!")
     
     return trajectories
 
 
-def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000, start_update=0):
+def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000, start_update=0, size=5, mines=5):
     """
     Pre-train DQN agent on expert trajectories.
     
@@ -227,10 +265,17 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         checkpoint_prefix: Prefix for checkpoint filenames
         save_every: Save checkpoint every N updates
         start_update: Starting update number (for resuming)
+        size: Board size (for logging directory)
+        mines: Number of mines (for logging directory)
         
     Returns:
         losses: List of training losses
     """
+    # Create metrics directory
+    directory = f"./metrics/s{size}-m{mines}"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    
     # Fill replay buffer with expert data (if starting fresh or buffer is empty)
     if len(agent.buffer) < len(trajectories):
         print(f"Filling replay buffer with {len(trajectories)} expert transitions...")
@@ -242,6 +287,28 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
     print(f"Buffer size: {len(agent.buffer)}")
     print(f"Performing {num_updates} pre-training updates (starting from update {start_update})...")
     print(f"Saving checkpoints every {save_every} updates to {checkpoint_prefix}-XXXXX.pth")
+    
+    # Initialize loss tracking dictionary
+    loss_dict = {
+        "steps": [],
+        "loss": []
+    }
+    
+    # Load historical loss data if resuming
+    if start_update > 0 and os.path.exists(f"{directory}/pretrain_loss.log"):
+        print(f"Loading historical loss data from previous pretraining...")
+        with open(f"{directory}/pretrain_loss.log", "r", encoding="utf-8") as file:
+            lines = file.readlines()
+        
+        loss_pattern = r"\[update=(\d+)\]: loss=([\d\.]+)"
+        for line in lines:
+            match = re.search(loss_pattern, line)
+            if match:
+                update_num, loss_value = match.groups()
+                loss_dict["steps"].append(int(update_num))
+                loss_dict["loss"].append(float(loss_value))
+        
+        print(f"Loaded {len(loss_dict['steps'])} historical loss data points")
     
     import time
     start_time = time.time()
@@ -269,6 +336,38 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
             avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
             rate = (update + 1) / (time.time() - start_time) if (time.time() - start_time) > 0 else 0
             print(f"\n[Checkpoint] Saved {checkpoint_path} (avg_loss: {avg_loss:.4f})")
+            
+            # Log loss to file
+            with open(f"{directory}/pretrain_loss.log", "a", encoding="utf-8") as file:
+                file.write(f"[update={current_update + 1}]: loss={avg_loss:.6f}\n")
+            
+            # Update loss dictionary
+            loss_dict["steps"].append(current_update + 1)
+            loss_dict["loss"].append(avg_loss)
+            
+            # Generate loss plot
+            plt.figure(figsize=(10, 6))
+            plt.plot(loss_dict["steps"], loss_dict["loss"], label="Pretrain Loss", linestyle="-", color="blue")
+            plt.xlabel("Update")
+            plt.ylabel("Loss")
+            plt.title(f"Pretraining Loss Curve for size={size}, mines={mines}")
+            plt.grid(True)
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+            plt.savefig(f"{directory}/pretrain_loss-{current_update + 1}.png", dpi=600)
+            plt.close()
+            print(f"Saved pretrain loss curve to pretrain_loss-{current_update + 1}.png")
+            
+            # Clean up old plot files
+            plot_pattern = re.compile(r"pretrain_loss-(\d+)\.png")
+            for fname in os.listdir(directory):
+                match = plot_pattern.match(fname)
+                if not match:
+                    continue
+                file_update = int(match.group(1))
+                if file_update < current_update + 1:
+                    os.remove(f"{directory}/{fname}")
+            
             total_target = start_update + num_updates
             print(f"Progress: {current_update + 1}/{total_target} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
     
@@ -279,8 +378,41 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         total_target = start_update + num_updates
         print(f"\rProgress: {total_target}/{total_target} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f}) - Complete!")
     
-    avg_loss = np.mean(losses[-10000:]) if len(losses) >= 10000 else np.mean(losses) if losses else 0.0
-    print(f"\nPre-training complete! Average loss (last 10k): {avg_loss:.4f}")
+    # Final loss logging and plotting
+    final_update = start_update + num_updates
+    final_avg_loss = np.mean(losses[-10000:]) if len(losses) >= 10000 else np.mean(losses) if losses else 0.0
+    
+    # Log final loss
+    with open(f"{directory}/pretrain_loss.log", "a", encoding="utf-8") as file:
+        file.write(f"[update={final_update}]: loss={final_avg_loss:.6f}\n")
+        file.write(f"Pre-training complete! Average loss (last 10k): {final_avg_loss:.4f}\n")
+    
+    # Update and save final plot
+    loss_dict["steps"].append(final_update)
+    loss_dict["loss"].append(final_avg_loss)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(loss_dict["steps"], loss_dict["loss"], label="Pretrain Loss", linestyle="-", color="blue")
+    plt.xlabel("Update")
+    plt.ylabel("Loss")
+    plt.title(f"Pretraining Loss Curve for size={size}, mines={mines}")
+    plt.grid(True)
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
+    plt.savefig(f"{directory}/pretrain_loss-{final_update}.png", dpi=600)
+    plt.close()
+    print(f"\nPre-training complete! Average loss (last 10k): {final_avg_loss:.4f}")
+    print(f"Final loss curve saved to pretrain_loss-{final_update}.png")
+    
+    # Clean up old plot files
+    plot_pattern = re.compile(r"pretrain_loss-(\d+)\.png")
+    for fname in os.listdir(directory):
+        match = plot_pattern.match(fname)
+        if not match:
+            continue
+        file_update = int(match.group(1))
+        if file_update < final_update:
+            os.remove(f"{directory}/{fname}")
     
     return losses
 
@@ -295,6 +427,7 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate (lower for stable pretraining)")
     parser.add_argument("--num-workers", type=int, default=None, help="Parallel workers for data collection (default: CPU count)")
     parser.add_argument("--output", type=str, default=None, help="Path to save pretrained checkpoint")
+    parser.add_argument("--wins-only", action="store_true", help="Only collect winning episodes (default: collect all episodes)")
     args = parser.parse_args()
     
     print("=" * 60)
@@ -318,7 +451,8 @@ def main():
     )
     
     # Check for cached expert trajectories
-    expert_cache_path = f"expert_trajectories_s{args.size}_m{args.mines}_n{args.expert_episodes}.pkl"
+    cache_suffix = "wins" if args.wins_only else "all"
+    expert_cache_path = f"expert_trajectories_s{args.size}_m{args.mines}_n{args.expert_episodes}_{cache_suffix}.pkl"
     
     if os.path.exists(expert_cache_path):
         print(f"\n[CACHE] Found cached expert trajectories: {expert_cache_path}")
@@ -338,8 +472,9 @@ def main():
         )
         
         # Collect expert trajectories
-        print(f"\nCollecting {args.expert_episodes} winning episodes from expert...")
-        trajectories = collect_expert_trajectories(env, expert, args.expert_episodes, num_workers=args.num_workers)
+        mode = "winning episodes" if args.wins_only else "episodes (wins + losses)"
+        print(f"\nCollecting {args.expert_episodes} {mode} from expert...")
+        trajectories = collect_expert_trajectories(env, expert, args.expert_episodes, num_workers=args.num_workers, wins_only=args.wins_only)
         
         # Cache the trajectories for future use
         print(f"\n[CACHE] Saving expert trajectories to: {expert_cache_path}")
@@ -395,7 +530,8 @@ def main():
         print(f"Starting from update {start_update}, performing {remaining_updates} more updates (target: {args.num_updates})")
         losses = pretrain_from_expert(
             agent, trajectories, remaining_updates, args.batch_size, 
-            checkpoint_prefix=checkpoint_prefix, save_every=5000, start_update=start_update
+            checkpoint_prefix=checkpoint_prefix, save_every=5000, start_update=start_update,
+            size=args.size, mines=args.mines
         )
     
     # Save final checkpoint
