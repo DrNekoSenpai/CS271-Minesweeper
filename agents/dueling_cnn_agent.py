@@ -172,6 +172,7 @@ class DuelingDCNNAgent:
         eps_decay_steps: int = 400_000,
         grad_clip: float = 1.0,
         device: Optional[str] = None,
+        use_amp: bool = False,
     ):
         self.H, self.W, self.D = height, width, depth
         self.n_actions = height * width * depth
@@ -217,11 +218,13 @@ class DuelingDCNNAgent:
         self.optim = torch.optim.Adam(self.online.parameters(), lr=lr)
         self.buffer = ReplayBuffer(buffer_size)
         
-        # Mixed precision training (automatic if CUDA available)
-        self.use_amp = (self.device.type == 'cuda')
-        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
+        # Mixed precision training (opt-in, requires compatible GPU)
+        self.use_amp = use_amp and (self.device.type == 'cuda')
+        self.scaler = torch.amp.GradScaler('cuda') if self.use_amp else None
         if self.use_amp:
-            print(f"Mixed precision training enabled (FP16) - expect ~2x speedup")
+            print(f"Mixed precision training enabled (FP16) - DISABLE THIS IF PRETRAINING HANGS!")
+        elif use_amp:
+            print(f"Warning: Mixed precision requested but CUDA not available")
 
     # -------------------------
     # Action masking helpers
@@ -542,7 +545,10 @@ class DuelingDCNNAgent:
         done_t = torch.from_numpy(done).to(self.device)
 
         # Mixed precision training context
-        with torch.cuda.amp.autocast(enabled=self.use_amp):
+        # Use FP16-compatible mask value when using mixed precision
+        mask_value = -65000.0 if self.use_amp else -1e9
+        
+        with torch.amp.autocast('cuda', enabled=self.use_amp):
             # Current Q(s,a)
             q = self.online(obs_t).gather(1, actions_t).squeeze(1)
 
@@ -552,7 +558,7 @@ class DuelingDCNNAgent:
                 online_next_q = self.online(next_obs_t)  # (B, n_actions)
                 legal_mask = self.build_legal_mask(next_obs)  # (B, n_actions)
 
-                online_next_q = online_next_q.masked_fill(~legal_mask, -1e9)
+                online_next_q = online_next_q.masked_fill(~legal_mask, mask_value)
                 next_actions = torch.argmax(online_next_q, dim=1, keepdim=True)
 
                 # Target evaluates those actions
