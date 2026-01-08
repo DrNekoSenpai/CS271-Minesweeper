@@ -290,7 +290,7 @@ def main():
     parser.add_argument("--size", type=int, default=5, help="Board size (creates size x size x size cube)")
     parser.add_argument("--mines", type=int, default=10, help="Number of mines")
     parser.add_argument("--expert-episodes", type=int, default=500, help="Number of episodes to collect from expert")
-    parser.add_argument("--num-updates", type=int, default=5000, help="Number of training updates")
+    parser.add_argument("--num-updates", type=int, default=500000, help="Number of training updates (~3 epochs for 100k episodes)")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate (lower for stable pretraining)")
     parser.add_argument("--num-workers", type=int, default=None, help="Parallel workers for data collection (default: CPU count)")
@@ -357,7 +357,7 @@ def main():
         batch_size=args.batch_size,
         warmup=0,  # No warmup needed, we're filling buffer manually
         target_update=10000,  # Infrequent updates during pretraining (or keep target frozen)
-        buffer_size=200000,
+        buffer_size=2_100_000,  # Large enough to hold ~2M transitions from 100k winning expert episodes
         eps_decay_steps=150000,
         # !!!!! 5070 pytorch issue workaround !!!!!
         # device="cpu"  # Force CPU for compatibility - comment this out to use GPU if available
