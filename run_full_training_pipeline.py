@@ -36,6 +36,7 @@ import subprocess
 import sys
 import argparse
 import time
+import os
 from pathlib import Path
 
 # ANSI color codes
@@ -159,14 +160,35 @@ def main():
     print(f"  Batch size:        {args.rl_batch_size}")
     print(f"  Learning rate:     {args.rl_lr}")
     
-    # Check for existing pretrained checkpoint
+    # Check for existing pretrained checkpoint (both naming conventions)
     pretrained_checkpoint = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
-    checkpoint_exists = Path(pretrained_checkpoint).exists()
     
-    if checkpoint_exists and not args.force_pretrain:
-        print(f"\n{YELLOW}[SKIP] Skipping pretraining - checkpoint exists: {pretrained_checkpoint}{RESET}")
-        print(f"{YELLOW}       Use --force-pretrain to overwrite existing checkpoint{RESET}")
+    # Check if pretraining is complete by looking at checkpoint numbers
+    pretraining_complete = Path(pretrained_checkpoint).exists()
+    latest_pretrain_step = 0
+    
+    if not pretraining_complete:
+        # Look for dqn-pretrain-s{size}-m{mines}-*.pth pattern
+        pretrain_pattern = f"dqn-pretrain-s{args.size}-m{args.mines}"
+        pretrain_files = sorted(
+            [f for f in os.listdir('.') if pretrain_pattern in f and f.endswith('.pth')],
+            key=lambda x: int(x.split('-')[-1].split('.')[0])
+        )
+        if pretrain_files:
+            pretrained_checkpoint = pretrain_files[-1]  # Use latest
+            latest_pretrain_step = int(pretrain_files[-1].split('-')[-1].split('.')[0])
+            # Check if we've reached the target number of updates
+            pretraining_complete = (latest_pretrain_step >= args.num_updates)
+    
+    if pretraining_complete and not args.force_pretrain:
+        print(f"\n{YELLOW}[SKIP] Pretraining complete - checkpoint exists: {pretrained_checkpoint}{RESET}")
+        if latest_pretrain_step > 0:
+            print(f"{YELLOW}       ({latest_pretrain_step}/{args.num_updates} updates completed){RESET}")
+        print(f"{YELLOW}       Use --force-pretrain to restart from scratch{RESET}")
         skip_stage1 = True
+    elif latest_pretrain_step > 0:
+        print(f"\n{CYAN}[RESUME] Pretraining incomplete - will resume from update {latest_pretrain_step}/{args.num_updates}{RESET}")
+        skip_stage1 = False
     else:
         skip_stage1 = False
     

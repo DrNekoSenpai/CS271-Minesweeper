@@ -168,45 +168,53 @@ def main(size:int, mines:int, num_steps:int):
             else:
                 raise
 
-    if start_step > 0:
+    # If loading from pretrained (not a training checkpoint), reset start_step to 0
+    # since pretrained checkpoints don't have RL training history
+    if is_pretrained and start_step > 0:
+        print(f"[PRETRAINED] Resetting training step counter to 0 (pretraining step was {start_step})")
+        start_step = 0
+
+    if start_step > 0 and not is_pretrained:
         print(f"Loading historical metrics from previous training...")
-        with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
-            lines = file.readlines() 
-        
-        # Parse complete metrics format: step, reward, safe_moves, safe_tiles, wins
-        metrics_pattern = r"\[step=(\d+)/(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+) wins=(\d+)/100"
-        metrics_pattern_old = r"\[step=(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+)"
-        
-        for line in lines: 
-            # Try new complete format first (with wins)
-            match = re.search(metrics_pattern, line)
-            if match:
-                steps, _, reward, safe_moves, safe_tiles, wins = match.groups()
-                metrics_dict["steps"].append(int(steps))
-                metrics_dict["reward"].append(float(reward))
-                metrics_dict["safe_moves"].append(float(safe_moves))
-                metrics_dict["safe_tiles"].append(float(safe_tiles))
-                wins_dict["steps"].append(int(steps))
-                wins_dict["wins"].append(int(wins))
-            else:
-                # Fall back to old format (no wins)
-                match = re.search(metrics_pattern_old, line)
-                if match: 
-                    steps, reward, safe_moves, safe_tiles = match.groups()
+        if os.path.exists(f"./metrics/s{size}-m{mines}/metrics.log"):
+            with open(f"./metrics/s{size}-m{mines}/metrics.log", "r", encoding="utf-8") as file: 
+                lines = file.readlines() 
+            
+            # Parse complete metrics format: step, reward, safe_moves, safe_tiles, wins
+            metrics_pattern = r"\[step=(\d+)/(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+) wins=(\d+)/100"
+            metrics_pattern_old = r"\[step=(\d+)\] reward=([\d\.\-]+) safe_moves=([\d\.\-]+) safe_tiles=([\d\.\-]+)"
+            
+            for line in lines: 
+                # Try new complete format first (with wins)
+                match = re.search(metrics_pattern, line)
+                if match:
+                    steps, _, reward, safe_moves, safe_tiles, wins = match.groups()
                     metrics_dict["steps"].append(int(steps))
                     metrics_dict["reward"].append(float(reward))
                     metrics_dict["safe_moves"].append(float(safe_moves))
                     metrics_dict["safe_tiles"].append(float(safe_tiles))
-        
-        print(f"Loaded {len(metrics_dict['steps'])} historical metric data points")
-        print(f"Loaded {len(wins_dict['steps'])} historical win rate data points")
+                    wins_dict["steps"].append(int(steps))
+                    wins_dict["wins"].append(int(wins))
+                else:
+                    # Fall back to old format (no wins)
+                    match = re.search(metrics_pattern_old, line)
+                    if match: 
+                        steps, reward, safe_moves, safe_tiles = match.groups()
+                        metrics_dict["steps"].append(int(steps))
+                        metrics_dict["reward"].append(float(reward))
+                        metrics_dict["safe_moves"].append(float(safe_moves))
+                        metrics_dict["safe_tiles"].append(float(safe_tiles))
+            
+            print(f"Loaded {len(metrics_dict['steps'])} historical metric data points")
+            print(f"Loaded {len(wins_dict['steps'])} historical win rate data points")
 
-        with open(f"./metrics/s{size}-m{mines}/loss.log", "r", encoding="utf-8") as file: 
-            lines = file.readlines() 
+        if os.path.exists(f"./metrics/s{size}-m{mines}/loss.log"):
+            with open(f"./metrics/s{size}-m{mines}/loss.log", "r", encoding="utf-8") as file: 
+                lines = file.readlines() 
 
-        loss_pattern = r"\[step=(\d+)\]: (.*)"
-        for line in lines: 
-            match = re.search(loss_pattern, line)
+            loss_pattern = r"\[step=(\d+)\]: (.*)"
+            for line in lines: 
+                match = re.search(loss_pattern, line)
             if match: 
                 steps, loss_value = match.groups()
                 loss_dict["steps"].append(int(steps))

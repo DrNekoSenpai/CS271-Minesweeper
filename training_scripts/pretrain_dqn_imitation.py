@@ -214,7 +214,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
     return trajectories
 
 
-def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000):
+def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000, start_update=0):
     """
     Pre-train DQN agent on expert trajectories.
     
@@ -226,49 +226,58 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         verbose: Print progress
         checkpoint_prefix: Prefix for checkpoint filenames
         save_every: Save checkpoint every N updates
+        start_update: Starting update number (for resuming)
         
     Returns:
         losses: List of training losses
     """
-    # Fill replay buffer with expert data
-    print(f"Filling replay buffer with {len(trajectories)} expert transitions...")
-    for obs, action, reward, next_obs, done in trajectories:
-        agent.remember(obs, action, reward, next_obs, done)
+    # Fill replay buffer with expert data (if starting fresh or buffer is empty)
+    if len(agent.buffer) < len(trajectories):
+        print(f"Filling replay buffer with {len(trajectories)} expert transitions...")
+        for obs, action, reward, next_obs, done in trajectories:
+            agent.remember(obs, action, reward, next_obs, done)
+    else:
+        print(f"Buffer already filled with {len(agent.buffer)} transitions (resuming from checkpoint)")
     
     print(f"Buffer size: {len(agent.buffer)}")
-    print(f"Performing {num_updates} pre-training updates...")
+    print(f"Performing {num_updates} pre-training updates (starting from update {start_update})...")
     print(f"Saving checkpoints every {save_every} updates to {checkpoint_prefix}-XXXXX.pth")
     
     import time
     start_time = time.time()
-    print(f"Progress: 0/{num_updates} updates (0.0 upd/sec)", end='', flush=True)
+    print(f"Progress: {start_update}/{start_update + num_updates} updates (0.0 upd/sec)", end='', flush=True)
     
     losses = []
     
     for update in range(num_updates):
+        current_update = start_update + update
         stats = agent.optimize()
         if stats:
             losses.append(stats['loss'])
             
-            if verbose and (update + 1) % 100 == 0:
+            if verbose and (current_update + 1) % 100 == 0:
                 avg_loss = np.mean(losses[-100:])
                 elapsed = time.time() - start_time
                 rate = (update + 1) / elapsed if elapsed > 0 else 0
-                print(f"\rProgress: {update + 1}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
+                total_target = start_update + num_updates
+                print(f"\rProgress: {current_update + 1}/{total_target} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
         
-        # Save checkpoint periodically
-        if (update + 1) % save_every == 0:
-            checkpoint_path = f"{checkpoint_prefix}-{update + 1}.pth"
-            agent.save_checkpoint(checkpoint_path, step=update + 1)
+        # Save checkpoint periodically (using absolute update number)
+        if (current_update + 1) % save_every == 0:
+            checkpoint_path = f"{checkpoint_prefix}-{current_update + 1}.pth"
+            agent.save_checkpoint(checkpoint_path, step=current_update + 1)
             avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
+            rate = (update + 1) / (time.time() - start_time) if (time.time() - start_time) > 0 else 0
             print(f"\n[Checkpoint] Saved {checkpoint_path} (avg_loss: {avg_loss:.4f})")
-            print(f"Progress: {update + 1}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
+            total_target = start_update + num_updates
+            print(f"Progress: {current_update + 1}/{total_target} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f})", end='', flush=True)
     
     if verbose:
         elapsed = time.time() - start_time
         rate = num_updates / elapsed if elapsed > 0 else 0
         avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
-        print(f"\rProgress: {num_updates}/{num_updates} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f}) - Complete!")
+        total_target = start_update + num_updates
+        print(f"\rProgress: {total_target}/{total_target} updates ({rate:.1f} upd/sec, avg_loss: {avg_loss:.4f}) - Complete!")
     
     avg_loss = np.mean(losses[-10000:]) if len(losses) >= 10000 else np.mean(losses) if losses else 0.0
     print(f"\nPre-training complete! Average loss (last 10k): {avg_loss:.4f}")
@@ -355,11 +364,39 @@ def main():
     )
     print(f"Using device: {agent.device}")
     
-    # Pre-train on expert data
-    print("\nPre-training DQN on expert trajectories...")
+    # Check for existing pretrain checkpoint to resume from
     checkpoint_prefix = f"dqn-pretrain-s{args.size}-m{args.mines}"
-    losses = pretrain_from_expert(agent, trajectories, args.num_updates, args.batch_size, 
-                                  checkpoint_prefix=checkpoint_prefix, save_every=5000)
+    existing_checkpoints = sorted(
+        [f for f in os.listdir('.') if checkpoint_prefix in f and f.endswith('.pth') and f != f"{checkpoint_prefix}.pth"],
+        key=lambda x: int(x.split('-')[-1].split('.')[0])
+    )
+    
+    start_update = 0
+    if existing_checkpoints:
+        latest_checkpoint = existing_checkpoints[-1]
+        start_update = int(latest_checkpoint.split('-')[-1].split('.')[0])
+        print(f"\n[RESUME] Found existing checkpoint: {latest_checkpoint}")
+        print(f"Loading checkpoint to resume from update {start_update}...")
+        try:
+            agent.load_checkpoint(latest_checkpoint)
+            print(f"Successfully loaded checkpoint!")
+        except Exception as e:
+            print(f"Warning: Could not load checkpoint: {e}")
+            print(f"Starting from scratch instead.")
+            start_update = 0
+    
+    # Pre-train on expert data
+    if start_update >= args.num_updates:
+        print(f"\n[COMPLETE] Pretraining already completed ({start_update}/{args.num_updates} updates)")
+        print(f"Use --force-pretrain to restart from scratch")
+    else:
+        remaining_updates = args.num_updates - start_update
+        print(f"\nPre-training DQN on expert trajectories...")
+        print(f"Starting from update {start_update}, performing {remaining_updates} more updates (target: {args.num_updates})")
+        losses = pretrain_from_expert(
+            agent, trajectories, remaining_updates, args.batch_size, 
+            checkpoint_prefix=checkpoint_prefix, save_every=5000, start_update=start_update
+        )
     
     # Save final checkpoint
     if args.output is None:
