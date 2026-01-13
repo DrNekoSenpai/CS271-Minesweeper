@@ -76,7 +76,7 @@ def _collect_single_episode(args_tuple):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Return episode (win reward is 100.0, loss is -50.0)
+        # Return episode (win reward is 100.0, loss is -80.0)
         won = (reward == 100.0)
         
         # If collecting all episodes, return immediately
