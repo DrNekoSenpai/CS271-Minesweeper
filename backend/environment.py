@@ -87,9 +87,11 @@ class MinesweeperEnv(gym.Env):
             terminated = True
             truncated = False
             # CRITICAL: Win reward must dominate progress rewards
-            # Win: Large positive reward to incentivize completion
-            # Loss: Large negative penalty to discourage risky play
-            reward = 100.0 if self.game.win else -50.0
+            # With avg 0.8 reward/tile: 95 tiles = ~76 progress, 120 tiles = ~96 progress
+            # Win: +100 makes total ~196 (very positive)
+            # Loss: -80 makes total ~-4 at 95 tiles (slightly negative, dying is BAD)
+            # This creates clear value distinction: winning >> dying
+            reward = 100.0 if self.game.win else -80.0
             safe_move = 1 if self.game.win else 0
             new_visible = np.sum(self.game.visible >= 0)
             safe_tiles = max(new_visible - prev_visible, 0)
