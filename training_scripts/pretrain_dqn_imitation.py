@@ -6,6 +6,13 @@ from the Bayesian agent (expert policy), then performing supervised learning
 on this data before starting standard RL training.
 
 This gives the DQN a warm start with good behavior patterns.
+
+Checkpoint System:
+- Checkpoints are saved with format: dqn-pretrain-s{size}-m{mines}-{update}-loss{avg_loss}.pth
+- Only two checkpoints are kept at any time:
+  1. The checkpoint with the lowest loss (best model)
+  2. The most recent checkpoint (for resuming training)
+- Old checkpoints are automatically deleted to prevent filesystem clutter
 """
 
 import argparse
@@ -276,6 +283,10 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
     if not os.path.exists(directory):
         os.makedirs(directory)
     
+    # Track best checkpoint (lowest loss)
+    best_checkpoint_path = None
+    best_loss = float('inf')
+    
     # Fill replay buffer with expert data (if starting fresh or buffer is empty)
     if len(agent.buffer) < len(trajectories):
         print(f"Filling replay buffer with {len(trajectories)} expert transitions...")
@@ -331,11 +342,33 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         
         # Save checkpoint periodically (using absolute update number)
         if (current_update + 1) % save_every == 0:
-            checkpoint_path = f"{checkpoint_prefix}-{current_update + 1}.pth"
-            agent.save_checkpoint(checkpoint_path, step=current_update + 1)
             avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
+            checkpoint_path = f"{checkpoint_prefix}-{current_update + 1}-loss{avg_loss:.6f}.pth"
+            agent.save_checkpoint(checkpoint_path, step=current_update + 1)
             rate = (update + 1) / (time.time() - start_time) if (time.time() - start_time) > 0 else 0
             print(f"\n[Checkpoint] Saved {checkpoint_path} (avg_loss: {avg_loss:.4f})")
+            
+            # Check if this is the best checkpoint so far
+            if avg_loss < best_loss:
+                # Delete previous best checkpoint if it exists
+                if best_checkpoint_path and os.path.exists(best_checkpoint_path):
+                    os.remove(best_checkpoint_path)
+                    print(f"[Cleanup] Deleted previous best checkpoint")
+                best_loss = avg_loss
+                best_checkpoint_path = checkpoint_path
+                print(f"[Best] New best checkpoint with loss: {best_loss:.6f}")
+            else:
+                # This is not the best, and we'll delete previous checkpoints except the best
+                # Delete all checkpoints except current and best
+                checkpoint_pattern = re.compile(rf"{re.escape(checkpoint_prefix)}-(\d+)-loss([\d\.]+)\.pth")
+                for fname in os.listdir('.'):
+                    match = checkpoint_pattern.match(fname)
+                    if not match:
+                        continue
+                    # Keep the best checkpoint and the current checkpoint
+                    if fname != best_checkpoint_path and fname != checkpoint_path:
+                        os.remove(fname)
+                        print(f"[Cleanup] Deleted old checkpoint: {fname}")
             
             # Log loss to file
             with open(f"{directory}/pretrain_loss.log", "a", encoding="utf-8") as file:
@@ -501,15 +534,25 @@ def main():
     
     # Check for existing pretrain checkpoint to resume from
     checkpoint_prefix = f"dqn-pretrain-s{args.size}-m{args.mines}"
-    existing_checkpoints = sorted(
-        [f for f in os.listdir('.') if checkpoint_prefix in f and f.endswith('.pth') and f != f"{checkpoint_prefix}.pth"],
-        key=lambda x: int(x.split('-')[-1].split('.')[0])
-    )
+    
+    # Look for checkpoints with the new format (with loss) or old format (without loss)
+    checkpoint_pattern = re.compile(rf"{re.escape(checkpoint_prefix)}-(\d+)(?:-loss[\d\.]+)?\.pth")
+    existing_checkpoints = []
+    for f in os.listdir('.'):
+        if f == f"{checkpoint_prefix}.pth":
+            continue  # Skip the final pretrained checkpoint
+        match = checkpoint_pattern.match(f)
+        if match:
+            update_num = int(match.group(1))
+            existing_checkpoints.append((update_num, f))
+    
+    # Sort by update number
+    existing_checkpoints.sort(key=lambda x: x[0])
     
     start_update = 0
     if existing_checkpoints:
-        latest_checkpoint = existing_checkpoints[-1]
-        start_update = int(latest_checkpoint.split('-')[-1].split('.')[0])
+        latest_update, latest_checkpoint = existing_checkpoints[-1]
+        start_update = latest_update
         print(f"\n[RESUME] Found existing checkpoint: {latest_checkpoint}")
         print(f"Loading checkpoint to resume from update {start_update}...")
         try:
