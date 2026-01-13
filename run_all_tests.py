@@ -69,6 +69,12 @@ TEST_SCRIPTS = [
         'description': 'Compares Q-values between pretrained/trained models',
         'optional': True  # Requires checkpoint files
     },
+    {
+        'name': 'Pretraining Validation',
+        'file': 'tests/validate_pretraining.py',
+        'description': 'Validates pretraining effectiveness vs random initialization',
+        'optional': True  # Requires pretrained checkpoint
+    },
 ]
 
 

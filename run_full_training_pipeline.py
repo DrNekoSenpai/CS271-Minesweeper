@@ -138,6 +138,12 @@ def main():
                         help='Batch size for RL training [default: 256]')
     parser.add_argument('--rl-lr', type=float, default=1e-4,
                         help='Learning rate for RL training [default: 1e-4]')
+    parser.add_argument('--eps-end', type=float, default=0.2,
+                        help='Minimum exploration rate (epsilon) [default: 0.2 = 20%%]')
+    parser.add_argument('--eps-decay-steps', type=int, default=900000,
+                        help='Steps to decay epsilon over [default: 900000]')
+    parser.add_argument('--buffer-size', type=int, default=2000000,
+                        help='Replay buffer size [default: 2000000 = 2M]')
     parser.add_argument('--force-pretrain', action='store_true',
                         help='Force retraining even if checkpoint already exists')
     
@@ -159,6 +165,9 @@ def main():
     print(f"  Parallel envs:     {args.num_envs}")
     print(f"  Batch size:        {args.rl_batch_size}")
     print(f"  Learning rate:     {args.rl_lr}")
+    print(f"  Epsilon min:       {args.eps_end} ({args.eps_end*100:.0f}% exploration)")
+    print(f"  Epsilon decay:     {args.eps_decay_steps:,} steps")
+    print(f"  Buffer size:       {args.buffer_size:,} transitions")
     
     # Check for existing pretrained checkpoint (both naming conventions)
     pretrained_checkpoint = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
@@ -237,7 +246,10 @@ def main():
         '--num-steps', str(args.rl_steps),
         '--num-envs', str(args.num_envs),
         '--batch-size', str(args.rl_batch_size),
-        '--lr', str(args.rl_lr)
+        '--lr', str(args.rl_lr),
+        '--eps-end', str(args.eps_end),
+        '--eps-decay-steps', str(args.eps_decay_steps),
+        '--buffer-size', str(args.buffer_size)
     ]
     
     success = run_command(train_cmd, "STAGE 2: RL Training (Deep Q-Learning)")

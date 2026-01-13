@@ -35,6 +35,9 @@ def main(size:int, mines:int, num_steps:int):
     parser.add_argument("--num-envs", type=int, default=16, help="Parallel environments (higher = more GPU usage)")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size (higher = more GPU usage)")
     parser.add_argument("--lr", type=float, default=5e-5)
+    parser.add_argument("--eps-end", type=float, default=0.2, help="Minimum exploration rate (default 0.2 = 20%%)")
+    parser.add_argument("--eps-decay-steps", type=int, default=900000, help="Steps to decay epsilon (default 900k)")
+    parser.add_argument("--buffer-size", type=int, default=2000000, help="Replay buffer size (default 2M)")
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
     
@@ -62,8 +65,9 @@ def main(size:int, mines:int, num_steps:int):
         batch_size=args.batch_size,
         warmup=5000,
         target_update=200, 
-        buffer_size=200000, 
-        eps_decay_steps=150000,
+        buffer_size=args.buffer_size,
+        eps_end=args.eps_end,
+        eps_decay_steps=args.eps_decay_steps,
         # !!!!! 5070 pytorch issue workaround !!!!!
         # device="cpu"  # Force CPU for compatibility - comment this out to use GPU if available
     )
@@ -80,7 +84,7 @@ def main(size:int, mines:int, num_steps:int):
     recent_rewards = []
     recent_safe_moves = []
     recent_safe_tiles = []
-    recent_wins = []  # Track actual wins (reward == 500.0)
+    recent_wins = []  # Track actual wins (reward == 100.0)
 
     # Look for training checkpoints first, then pretrained as fallback
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
@@ -254,8 +258,8 @@ def main(size:int, mines:int, num_steps:int):
             episode_safe_moves[i] += safe_batch[i]
             episode_safe_tiles[i] += tile_batch[i]
             
-            # Track actual wins: terminal reward == 500.0 (revealed all non-mine tiles)
-            if done[i] and rewards[i] == 500.0:
+            # Track actual wins: terminal reward == 100.0 (revealed all non-mine tiles)
+            if done[i] and rewards[i] == 100.0:
                 recent_wins.append(1)
             elif done[i]:
                 recent_wins.append(0)
@@ -297,7 +301,7 @@ def main(size:int, mines:int, num_steps:int):
                     avg_safe_moves = np.mean(recent_safe_moves[-100:])
                     avg_safe_tiles = np.mean(recent_safe_tiles[-100:])
                     
-                    # True wins: episodes that ended with reward == 500.0
+                    # True wins: episodes that ended with reward == 100.0
                     actual_wins = sum(recent_wins[-100:]) if len(recent_wins) >= 100 else sum(recent_wins)
                     episodes_counted = min(100, len(recent_wins))
                     
@@ -425,4 +429,4 @@ def main(size:int, mines:int, num_steps:int):
 
 if __name__ == "__main__":
     # Default: just run with command line args or defaults
-    main(size=5, mines=10, num_steps=250000)
+    main(size=5, mines=10, num_steps=1000000)

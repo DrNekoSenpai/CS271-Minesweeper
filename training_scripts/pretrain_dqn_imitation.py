@@ -76,8 +76,8 @@ def _collect_single_episode(args_tuple):
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        # Return episode (win reward is 10.0, loss is -10.0)
-        won = (reward == 10.0)
+        # Return episode (win reward is 100.0, loss is -50.0)
+        won = (reward == 100.0)
         
         # If collecting all episodes, return immediately
         # If wins_only=True, retry until we get a win
@@ -213,7 +213,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
             episode_transitions.append((obs.copy(), action, reward, next_obs.copy(), done))
             obs = next_obs
         
-        won = (reward == 10.0)
+        won = (reward == 100.0)
         
         # If collecting all episodes, or if wins_only and this is a win, add it
         if not wins_only or won:
@@ -268,7 +268,7 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         trajectories: List of transitions from expert
         num_updates: Number of gradient updates to perform
         batch_size: Training batch size
-        verbose: Print progress
+        verbose: Print progressI
         checkpoint_prefix: Prefix for checkpoint filenames
         save_every: Save checkpoint every N updates
         start_update: Starting update number (for resuming)

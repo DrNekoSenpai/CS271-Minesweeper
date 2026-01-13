@@ -168,8 +168,8 @@ class DuelingDCNNAgent:
         warmup: int = 2_000,
         target_update: int = 250,
         eps_start: float = 1.0,
-        eps_end: float = 0.05,
-        eps_decay_steps: int = 400_000,
+        eps_end: float = 0.15,  # Higher minimum for continuous exploration
+        eps_decay_steps: int = 350_000,  # Decay over most of training
         grad_clip: float = 1.0,
         device: Optional[str] = None,
         use_amp: bool = False,

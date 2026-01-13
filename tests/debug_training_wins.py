@@ -84,12 +84,12 @@ print(f"Total episodes completed: {completed}")
 print(f"Total wins: {sum(recent_wins)}")
 print(f"Win rate: {sum(recent_wins)/max(1,completed)*100:.1f}%")
 print(f"\nTerminal rewards seen: {len(terminal_rewards_seen)}")
-print(f"  +10.0 (win) count: {sum(1 for r in terminal_rewards_seen if r == 10.0)}")
-print(f"  -10.0 (loss) count: {sum(1 for r in terminal_rewards_seen if r == -10.0)}")
-print(f"  Other count: {sum(1 for r in terminal_rewards_seen if r != 10.0 and r != -10.0)}")
+print(f"  +100.0 (win) count: {sum(1 for r in terminal_rewards_seen if r == 100.0)}")
+print(f"  -50.0 (loss) count: {sum(1 for r in terminal_rewards_seen if r == -50.0)}")
+print(f"  Other count: {sum(1 for r in terminal_rewards_seen if r != 100.0 and r != -50.0)}")
 
-# Check for terminal rewards (win=10.0, loss=-10.0 in current environment)
-if any(r != 10.0 and r != -10.0 for r in terminal_rewards_seen):
+# Check for terminal rewards (win=100.0, loss=-50.0 in current environment)
+if any(r != 100.0 and r != -50.0 for r in terminal_rewards_seen):
     print(f"\n[WARNING] BUG FOUND: Terminal rewards that aren't 10.0/-10.0!")
     weird_rewards = [r for r in terminal_rewards_seen if r != 10.0 and r != -10.0]
     print(f"  Weird rewards: {weird_rewards[:10]}")

@@ -3,24 +3,37 @@ import torch
 import numpy as np
 import os
 import sys
+import re
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
 
-# Check if checkpoint exists
-checkpoint_path = "dqn-checkpoint-s5-m8-400000.pth"
-if not os.path.exists(checkpoint_path):
-    print(f"[SKIP] Checkpoint file not found: {checkpoint_path}")
+# Find any training checkpoint (dqn-checkpoint-s*-m*-*.pth)
+checkpoint_pattern = re.compile(r"dqn-checkpoint-s(\d+)-m(\d+)-(\d+)\.pth")
+checkpoints = []
+for f in os.listdir('.'):
+    match = checkpoint_pattern.match(f)
+    if match:
+        size, mines, step = match.groups()
+        checkpoints.append((int(step), int(size), int(mines), f))
+
+if not checkpoints:
+    print("[SKIP] No training checkpoint found (dqn-checkpoint-*.pth)")
     print("This test requires a trained DQN checkpoint to run.")
     sys.exit(2)  # Exit code 2 = skipped
 
+# Use latest checkpoint
+checkpoints.sort(key=lambda x: x[0])
+step, size, mines, checkpoint_path = checkpoints[-1]
+print(f"Using checkpoint: {checkpoint_path} (size={size}, mines={mines}, step={step})")
+
 # Load agent
-agent = DuelingDCNNAgent(height=5, width=5, depth=5, device='cpu')
+agent = DuelingDCNNAgent(height=size, width=size, depth=size, device='cpu')
 checkpoint = torch.load(checkpoint_path, map_location='cpu')
 agent.online.load_state_dict(checkpoint['online_state'])
 agent.total_steps = agent.eps_decay_steps
 agent.safe_action_prob = 1.0  # Always use safe moves
 
-env = MinesweeperEnv(height=5, width=5, depth=5, num_mines=8, render_mode=None)
+env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode=None)
 
 print("Running 5 episodes with detailed logging:\n")
 
@@ -55,5 +68,5 @@ for ep in range(5):
             dqn_moves += 1
             print(f"  Move {moves}: DQN choice (zeros={num_zeros}, unrevealed={num_unrevealed}, safe_avail={safe_actions.size}, reward={reward:.1f})")
     
-    result = "WIN" if reward == 10.0 else "LOSS"
+    result = "WIN" if reward == 100.0 else "LOSS"
     print(f"Result: {result} - {moves} moves ({safe_moves} safe, {dqn_moves} DQN)\n")

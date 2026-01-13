@@ -86,7 +86,10 @@ class MinesweeperEnv(gym.Env):
         if self.game.game_over:
             terminated = True
             truncated = False
-            reward = 10.0 if self.game.win else -10.0  # Scaled down rewards for stability
+            # CRITICAL: Win reward must dominate progress rewards
+            # Win: Large positive reward to incentivize completion
+            # Loss: Large negative penalty to discourage risky play
+            reward = 100.0 if self.game.win else -50.0
             safe_move = 1 if self.game.win else 0
             new_visible = np.sum(self.game.visible >= 0)
             safe_tiles = max(new_visible - prev_visible, 0)

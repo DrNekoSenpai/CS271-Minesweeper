@@ -76,7 +76,7 @@ def test_performance(agent, env, num_episodes=100, verbose=False):
         rewards_list.append(total_reward)
         total_moves += moves
         
-        if reward == 10.0:
+        if reward == 100.0:
             wins += 1
         else:
             losses += 1
@@ -95,26 +95,60 @@ def test_performance(agent, env, num_episodes=100, verbose=False):
 
 
 def main():
+    import re
+    import sys
+    
     print("=" * 70)
     print("DQN DIAGNOSTIC ANALYSIS")
     print("=" * 70)
     
+    # Find pretrained checkpoint
+    pretrain_pattern = re.compile(r"dqn-pretrain(?:ed)?-s(\d+)-m(\d+)(?:-(\d+))?(?:-loss[\d\.]+)?\.pth")
+    pretrain_files = []
+    for f in os.listdir('.'):
+        match = pretrain_pattern.match(f)
+        if match:
+            size, mines, step = match.groups()
+            step = int(step) if step else 0
+            pretrain_files.append((step, int(size), int(mines), f))
+    
+    if not pretrain_files:
+        print("[SKIP] No pretrained checkpoint found")
+        print("This test requires pretrained and trained DQN checkpoints to run.")
+        sys.exit(2)
+    
+    pretrain_files.sort(key=lambda x: x[0])
+    _, size, mines, pretrained_path = pretrain_files[-1]
+    
+    # Find training checkpoint for same size/mines
+    train_pattern = re.compile(rf"dqn-checkpoint-s{size}-m{mines}-(\d+)\.pth")
+    train_files = []
+    for f in os.listdir('.'):
+        match = train_pattern.match(f)
+        if match:
+            step = int(match.group(1))
+            train_files.append((step, f))
+    
+    if not train_files:
+        print(f"[SKIP] No training checkpoint found for size={size}, mines={mines}")
+        print("This test requires pretrained and trained DQN checkpoints to run.")
+        sys.exit(2)
+    
+    train_files.sort(key=lambda x: x[0])
+    train_step, trained_path = train_files[-1]
+    
+    print(f"\nUsing checkpoints:")
+    print(f"  Pretrained: {pretrained_path}")
+    print(f"  Trained: {trained_path} (step {train_step})")
+    print(f"  Board: {size}x{size}x{size}, Mines: {mines}")
+    
     # Setup
-    size = 5
-    mines = 8
     env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode=None)
     
     # Test pretrained model
     print("\n1. PRETRAINED MODEL (after imitation learning)")
     print("-" * 70)
     pretrained_agent = DuelingDCNNAgent(height=size, width=size, depth=size, device='cpu')
-    pretrained_path = f"dqn-pretrained-s{size}-m{mines}.pth"
-    
-    if not os.path.exists(pretrained_path):
-        print(f"[SKIP] Checkpoint file not found: {pretrained_path}")
-        print("This test requires pretrained and trained DQN checkpoints to run.")
-        import sys
-        sys.exit(2)  # Exit code 2 = skipped
     
     checkpoint = torch.load(pretrained_path, map_location='cpu')
     pretrained_agent.online.load_state_dict(checkpoint['online_state'])
@@ -136,7 +170,6 @@ def main():
     print("\n\n2. TRAINED MODEL (after RL training)")
     print("-" * 70)
     trained_agent = DuelingDCNNAgent(height=size, width=size, depth=size, device='cpu')
-    trained_path = f"dqn-checkpoint-s{size}-m{mines}-400000.pth"
     
     checkpoint = torch.load(trained_path, map_location='cpu')
     trained_agent.online.load_state_dict(checkpoint['online_state'])

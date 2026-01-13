@@ -3,25 +3,38 @@ import torch
 import numpy as np
 import os
 import sys
+import re
 from agents.dueling_cnn_agent import DuelingDCNNAgent
 from backend.environment import MinesweeperEnv
 
-# Check if checkpoint exists
-checkpoint_path = "dqn-checkpoint-s5-m8-400000.pth"
-if not os.path.exists(checkpoint_path):
-    print(f"[SKIP] Checkpoint file not found: {checkpoint_path}")
+# Find any training checkpoint (dqn-checkpoint-s*-m*-*.pth)
+checkpoint_pattern = re.compile(r"dqn-checkpoint-s(\d+)-m(\d+)-(\d+)\.pth")
+checkpoints = []
+for f in os.listdir('.'):
+    match = checkpoint_pattern.match(f)
+    if match:
+        size, mines, step = match.groups()
+        checkpoints.append((int(step), int(size), int(mines), f))
+
+if not checkpoints:
+    print("[SKIP] No training checkpoint found (dqn-checkpoint-*.pth)")
     print("This test requires a trained DQN checkpoint to run.")
     sys.exit(2)  # Exit code 2 = skipped
 
+# Use latest checkpoint
+checkpoints.sort(key=lambda x: x[0])
+step, size, mines, checkpoint_path = checkpoints[-1]
+print(f"Using checkpoint: {checkpoint_path} (size={size}, mines={mines}, step={step})")
+
 # Load agent
-agent = DuelingDCNNAgent(height=5, width=5, depth=5, device='cpu')
+agent = DuelingDCNNAgent(height=size, width=size, depth=size, device='cpu')
 checkpoint = torch.load(checkpoint_path, map_location='cpu')
 agent.online.load_state_dict(checkpoint['online_state'])
 agent.target.load_state_dict(checkpoint['target_state'])
 agent.total_steps = agent.eps_decay_steps  # No exploration
 
 # Test safe action detection
-env = MinesweeperEnv(height=5, width=5, depth=5, num_mines=8, render_mode=None)
+env = MinesweeperEnv(height=size, width=size, depth=size, num_mines=mines, render_mode=None)
 
 print("Testing hybrid mode on 10 episodes:\n")
 
@@ -59,11 +72,11 @@ for ep in range(10):
     safe_moves_used += episode_safe
     dqn_moves += episode_dqn
     
-    if reward == 10.0:
+    if reward == 100.0:
         wins += 1
     
     print(f"Episode {ep+1}: {moves} moves, {episode_safe} safe, {episode_dqn} DQN, "
-          f"{'WIN' if reward == 10.0 else 'LOSS'}")
+          f"{'WIN' if reward == 100.0 else 'LOSS'}")
 
 print(f"\nSummary:")
 print(f"  Total moves: {total_moves}")

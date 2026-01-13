@@ -23,7 +23,7 @@ for ep in range(50):
     
     # Check consistency (win reward is 10.0, loss is -10.0)
     game_win = env.game.win
-    reward_win = (final_reward == 10.0)
+    reward_win = (final_reward == 100.0)
     
     if game_win != reward_win:
         print(f"MISMATCH! Episode {ep}: game.win={game_win}, reward={final_reward}")
