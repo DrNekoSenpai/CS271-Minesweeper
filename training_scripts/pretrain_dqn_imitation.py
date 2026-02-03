@@ -259,7 +259,7 @@ def _collect_expert_trajectories_sequential(env, expert_agent, num_episodes, ver
     return trajectories
 
 
-def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000, start_update=0, size=5, mines=5):
+def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbose=True, checkpoint_prefix="dqn-pretrain", save_every=5000, start_update=0, size=5, mines=5, checkpoint_dir="checkpoints_dqn"):
     """
     Pre-train DQN agent on expert trajectories.
     
@@ -343,7 +343,7 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
         # Save checkpoint periodically (using absolute update number)
         if (current_update + 1) % save_every == 0:
             avg_loss = np.mean(losses[-100:]) if len(losses) >= 100 else (np.mean(losses) if losses else 0.0)
-            checkpoint_path = f"{checkpoint_prefix}-{current_update + 1}-loss{avg_loss:.6f}.pth"
+            checkpoint_path = os.path.join(checkpoint_dir, f"{checkpoint_prefix}-{current_update + 1}-loss{avg_loss:.6f}.pth")
             agent.save_checkpoint(checkpoint_path, step=current_update + 1)
             rate = (update + 1) / (time.time() - start_time) if (time.time() - start_time) > 0 else 0
             print(f"\n[Checkpoint] Saved {checkpoint_path} (avg_loss: {avg_loss:.4f})")
@@ -361,13 +361,14 @@ def pretrain_from_expert(agent, trajectories, num_updates, batch_size=128, verbo
                 # This is not the best, and we'll delete previous checkpoints except the best
                 # Delete all checkpoints except current and best
                 checkpoint_pattern = re.compile(rf"{re.escape(checkpoint_prefix)}-(\d+)-loss([\d\.]+)\.pth")
-                for fname in os.listdir('.'):
+                for fname in os.listdir(checkpoint_dir):
                     match = checkpoint_pattern.match(fname)
                     if not match:
                         continue
                     # Keep the best checkpoint and the current checkpoint
-                    if fname != best_checkpoint_path and fname != checkpoint_path:
-                        os.remove(fname)
+                    fname_full = os.path.join(checkpoint_dir, fname)
+                    if fname_full != best_checkpoint_path and fname_full != checkpoint_path:
+                        os.remove(fname_full)
                         print(f"[Cleanup] Deleted old checkpoint: {fname}")
             
             # Log loss to file
@@ -459,6 +460,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate (lower for stable pretraining)")
     parser.add_argument("--num-workers", type=int, default=None, help="Parallel workers for data collection (default: CPU count)")
+    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints_dqn", help="Directory to save/load checkpoints (default: checkpoints_dqn)")
     parser.add_argument("--output", type=str, default=None, help="Path to save pretrained checkpoint")
     parser.add_argument("--wins-only", action="store_true", help="Only collect winning episodes (default: collect all episodes)")
     args = parser.parse_args()
@@ -467,12 +469,16 @@ def main():
     print("DQN Imitation Learning Pre-training")
     print("=" * 60)
     print(f"Configuration:")
+    print(f"  Checkpoint dir: {args.checkpoint_dir}")
     print(f"  Board size: {args.size}x{args.size}x{args.size}")
     print(f"  Mines: {args.mines}")
     print(f"  Expert episodes: {args.expert_episodes}")
     print(f"  Training updates: {args.num_updates}")
     print(f"  Batch size: {args.batch_size}")
     print("=" * 60)
+    
+    # Create checkpoint directory
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
     
     # Create environment
     env = MinesweeperEnv(
@@ -538,15 +544,16 @@ def main():
     # Look for checkpoints with the new format (with loss) or old format (without loss)
     checkpoint_pattern = re.compile(rf"{re.escape(checkpoint_prefix)}-(\d+)(?:-loss[\d\.]+)?\.pth")
     existing_checkpoints = []
-    for f in os.listdir('.'):
+    for f in os.listdir(args.checkpoint_dir):
         if f == f"{checkpoint_prefix}.pth":
             continue  # Skip the final pretrained checkpoint
         match = checkpoint_pattern.match(f)
         if match:
             update_num = int(match.group(1))
-            existing_checkpoints.append((update_num, f))
+            existing_checkpoints.append((f, update_num))
     
     # Sort by update number
+    existing_checkpoints.sort(key=lambda x: x[1])
     existing_checkpoints.sort(key=lambda x: x[0])
     
     start_update = 0
@@ -574,12 +581,12 @@ def main():
         losses = pretrain_from_expert(
             agent, trajectories, remaining_updates, args.batch_size, 
             checkpoint_prefix=checkpoint_prefix, save_every=5000, start_update=start_update,
-            size=args.size, mines=args.mines
+            size=args.size, mines=args.mines, checkpoint_dir=args.checkpoint_dir
         )
     
     # Save final checkpoint
     if args.output is None:
-        args.output = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
+        args.output = os.path.join(args.checkpoint_dir, f"dqn-pretrained-s{args.size}-m{args.mines}.pth")
     
     print(f"\nSaving pretrained checkpoint to: {args.output}")
     agent.save_checkpoint(args.output, step=0)

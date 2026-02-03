@@ -120,38 +120,44 @@ def main():
                         help='Board size (creates size×size×size cube) [default: 5]')
     parser.add_argument('--mines', type=int, default=5,
                         help='Number of mines [default: 5]')
-    parser.add_argument('--expert-episodes', type=int, default=10000,
-                        help='Number of episodes to collect for pretraining [default: 10000]')
+    parser.add_argument('--expert-episodes', type=int, default=100000,
+                        help='Number of episodes to collect for pretraining [default: 100000]')
     parser.add_argument('--num-updates', type=int, default=100000,
                         help='Number of pretraining optimization updates [default: 100000]')
-    parser.add_argument('--batch-size', type=int, default=128,
-                        help='Batch size for pretraining [default: 128]')
+    parser.add_argument('--batch-size', type=int, default=256,
+                        help='Batch size for pretraining [default: 256]')
     parser.add_argument('--lr', type=float, default=1e-4,
                         help='Learning rate for pretraining [default: 1e-4]')
     parser.add_argument('--num-workers', type=int, default=None,
                         help='Parallel workers for expert data collection (default: CPU count)')
-    parser.add_argument('--rl-steps', type=int, default=300000,
-                        help='Number of RL training steps [default: 300000]')
-    parser.add_argument('--num-envs', type=int, default=8,
-                        help='Parallel environments for RL training [default: 8]')
-    parser.add_argument('--rl-batch-size', type=int, default=256,
-                        help='Batch size for RL training [default: 256]')
+    parser.add_argument('--rl-steps', type=int, default=500000,
+                        help='Number of RL training steps [default: 500000]')
+    parser.add_argument('--num-envs', type=int, default=16,
+                        help='Parallel environments for RL training [default: 16]')
+    parser.add_argument('--rl-batch-size', type=int, default=512,
+                        help='Batch size for RL training [default: 512]')
     parser.add_argument('--rl-lr', type=float, default=1e-4,
                         help='Learning rate for RL training [default: 1e-4]')
     parser.add_argument('--eps-end', type=float, default=0.2,
                         help='Minimum exploration rate (epsilon) [default: 0.2 = 20%%]')
-    parser.add_argument('--eps-decay-steps', type=int, default=900000,
-                        help='Steps to decay epsilon over [default: 900000]')
+    parser.add_argument('--eps-decay-steps', type=int, default=400000,
+                        help='Steps to decay epsilon over [default: 400000]')
     parser.add_argument('--buffer-size', type=int, default=2000000,
                         help='Replay buffer size [default: 2000000 = 2M]')
+    parser.add_argument('--checkpoint-dir', type=str, default='checkpoints_dqn',
+                        help='Directory to save/load checkpoints [default: checkpoints_dqn]')
     parser.add_argument('--force-pretrain', action='store_true',
                         help='Force retraining even if checkpoint already exists')
     
     args = parser.parse_args()
     
+    # Create checkpoint directory early (before checking for existing checkpoints)
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
+    
     # Print configuration
     print_header("3D MINESWEEPER DQN - FULL TRAINING PIPELINE")
     print(f"{CYAN}Configuration:{RESET}")
+    print(f"  Checkpoint dir:    {args.checkpoint_dir}")
     print(f"  Board size:        {args.size}×{args.size}×{args.size}")
     print(f"  Mines:             {args.mines}")
     print(f"{CYAN}Pretraining:{RESET}")
@@ -170,7 +176,7 @@ def main():
     print(f"  Buffer size:       {args.buffer_size:,} transitions")
     
     # Check for existing pretrained checkpoint (both naming conventions)
-    pretrained_checkpoint = f"dqn-pretrained-s{args.size}-m{args.mines}.pth"
+    pretrained_checkpoint = os.path.join(args.checkpoint_dir, f"dqn-pretrained-s{args.size}-m{args.mines}.pth")
     
     # Check if pretraining is complete by looking at checkpoint numbers
     pretraining_complete = Path(pretrained_checkpoint).exists()
@@ -180,11 +186,11 @@ def main():
         # Look for dqn-pretrain-s{size}-m{mines}-*.pth pattern
         pretrain_pattern = f"dqn-pretrain-s{args.size}-m{args.mines}"
         pretrain_files = sorted(
-            [f for f in os.listdir('.') if pretrain_pattern in f and f.endswith('.pth')],
+            [f for f in os.listdir(args.checkpoint_dir) if pretrain_pattern in f and f.endswith('.pth')],
             key=lambda x: int(x.split('-')[-1].split('.')[0])
         )
         if pretrain_files:
-            pretrained_checkpoint = pretrain_files[-1]  # Use latest
+            pretrained_checkpoint = os.path.join(args.checkpoint_dir, pretrain_files[-1])  # Use latest
             latest_pretrain_step = int(pretrain_files[-1].split('-')[-1].split('.')[0])
             # Check if we've reached the target number of updates
             pretraining_complete = (latest_pretrain_step >= args.num_updates)
@@ -218,7 +224,8 @@ def main():
             '--expert-episodes', str(args.expert_episodes),
             '--num-updates', str(args.num_updates),
             '--batch-size', str(args.batch_size),
-            '--lr', str(args.lr)
+            '--lr', str(args.lr),
+            '--checkpoint-dir', args.checkpoint_dir
         ]
         
         # Add num-workers if specified
@@ -249,7 +256,8 @@ def main():
         '--lr', str(args.rl_lr),
         '--eps-end', str(args.eps_end),
         '--eps-decay-steps', str(args.eps_decay_steps),
-        '--buffer-size', str(args.buffer_size)
+        '--buffer-size', str(args.buffer_size),
+        '--checkpoint-dir', args.checkpoint_dir
     ]
     
     success = run_command(train_cmd, "STAGE 2: RL Training (Deep Q-Learning)")

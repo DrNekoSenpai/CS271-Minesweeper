@@ -38,6 +38,7 @@ def main(size:int, mines:int, num_steps:int):
     parser.add_argument("--eps-end", type=float, default=0.2, help="Minimum exploration rate (default 0.2 = 20%%)")
     parser.add_argument("--eps-decay-steps", type=int, default=900000, help="Steps to decay epsilon (default 900k)")
     parser.add_argument("--buffer-size", type=int, default=2000000, help="Replay buffer size (default 2M)")
+    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints_dqn", help="Directory to save/load checkpoints (default: checkpoints_dqn)")
     parser.add_argument("--fresh", action="store_true")
     args = parser.parse_args()
     
@@ -48,6 +49,9 @@ def main(size:int, mines:int, num_steps:int):
 
     directory = f"./metrics/s{size}-m{mines}"
     if not os.path.exists(directory): os.makedirs(directory)
+    
+    # Create checkpoint directory
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
 
     # Vectorized envs
     envs = gym.vector.SyncVectorEnv([
@@ -88,11 +92,11 @@ def main(size:int, mines:int, num_steps:int):
 
     # Look for training checkpoints first, then pretrained as fallback
     checkpoint_path = f"dqn-checkpoint-s{size}-m{mines}"
-    checkpoints = sorted([f for f in os.listdir(".") if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
+    checkpoints = sorted([f for f in os.listdir(args.checkpoint_dir) if checkpoint_path in f and f.endswith(".pth")], key=lambda x: int(x.split("-")[-1].split(".")[0]))
     
     is_pretrained = False  # Track if loading from pretraining
     if checkpoints:
-        load_path = checkpoints[-1]  # Latest training checkpoint
+        load_path = os.path.join(args.checkpoint_dir, checkpoints[-1])  # Latest training checkpoint
         print(f"Found training checkpoint: {load_path}")
     else:
         # Check for both naming conventions: dqn-pretrained-* and dqn-pretrain-*
@@ -104,19 +108,20 @@ def main(size:int, mines:int, num_steps:int):
         load_path = None
         for pattern in pretrained_patterns:
             # Look for exact match first
-            if os.path.exists(pattern):
-                load_path = pattern
+            full_pattern_path = os.path.join(args.checkpoint_dir, pattern)
+            if os.path.exists(full_pattern_path):
+                load_path = full_pattern_path
                 is_pretrained = True
                 print(f"Found pretrained checkpoint: {load_path}")
                 break
             
             # Look for pattern matches (e.g., dqn-pretrain-s5-m5-30000.pth)
             pretrain_checkpoints = sorted(
-                [f for f in os.listdir(".") if pattern in f and f.endswith(".pth")],
+                [f for f in os.listdir(args.checkpoint_dir) if pattern in f and f.endswith(".pth")],
                 key=lambda x: int(x.split("-")[-1].split(".")[0])
             )
             if pretrain_checkpoints:
-                load_path = pretrain_checkpoints[-1]  # Latest pretrain checkpoint
+                load_path = os.path.join(args.checkpoint_dir, pretrain_checkpoints[-1])  # Latest pretrain checkpoint
                 is_pretrained = True
                 print(f"Found pretrained checkpoint: {load_path}")
                 break
@@ -321,7 +326,7 @@ def main(size:int, mines:int, num_steps:int):
             stats = agent.optimize()
 
         if step % save_every == 0 and step != start_step: 
-            save_path = f"{checkpoint_path}-{step}.pth"
+            save_path = os.path.join(args.checkpoint_dir, f"{checkpoint_path}-{step}.pth")
             agent.save_checkpoint(save_path, step)
 
             print(f"Saved checkpoint: {save_path}")
