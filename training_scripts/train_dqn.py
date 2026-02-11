@@ -221,13 +221,13 @@ def main(size:int, mines:int, num_steps:int):
             with open(f"./metrics/s{size}-m{mines}/loss.log", "r", encoding="utf-8") as file: 
                 lines = file.readlines() 
 
-            loss_pattern = r"\[step=(\d+)\]: (.*)"
+            loss_pattern = r"\[step=(\d+)\]: loss=([\d\.\-eE]+)"
             for line in lines: 
                 match = re.search(loss_pattern, line)
-            if match: 
-                steps, loss_value = match.groups()
-                loss_dict["steps"].append(int(steps))
-                loss_dict["loss"].append(float(loss_value))
+                if match: 
+                    steps, loss_value = match.groups()
+                    loss_dict["steps"].append(int(steps))
+                    loss_dict["loss"].append(float(loss_value))
 
     else: 
         # Don't clear log files even with --fresh to preserve training history
