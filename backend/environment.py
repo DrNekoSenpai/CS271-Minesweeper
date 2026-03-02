@@ -86,7 +86,12 @@ class MinesweeperEnv(gym.Env):
         if self.game.game_over:
             terminated = True
             truncated = False
-            reward = 100.0 if self.game.win else -100.0
+            # CRITICAL: Win reward must dominate progress rewards
+            # With avg 0.8 reward/tile: 95 tiles = ~76 progress, 120 tiles = ~96 progress
+            # Win: +100 makes total ~196 (very positive)
+            # Loss: -80 makes total ~-4 at 95 tiles (slightly negative, dying is BAD)
+            # This creates clear value distinction: winning >> dying
+            reward = 100.0 if self.game.win else -80.0
             safe_move = 1 if self.game.win else 0
             new_visible = np.sum(self.game.visible >= 0)
             safe_tiles = max(new_visible - prev_visible, 0)
@@ -100,7 +105,23 @@ class MinesweeperEnv(gym.Env):
         new_visible = np.sum(self.game.visible >= 0)
         delta = int(new_visible - prev_visible)
 
-        reward = float(delta)
+        # Base reward: tiles revealed (normalized scale)
+        reward = float(delta) * 0.5  # Much smaller multiplier to prevent explosion
+        
+        # Bonus for progress toward completion
+        total_safe = self.width * self.height * self.depth - self.num_mines
+        progress = new_visible / total_safe
+        
+        # Progress bonus (much more conservative)
+        if delta > 0:
+            reward += progress * 2.0  # Scaled down from 10.0
+        
+        # Bonus for high-value reveals (flood fills are very good)
+        if delta > 5:
+            reward += 1.0  # Scaled down from 5.0
+        if delta > 10:
+            reward += 2.0  # Scaled down from 10.0
+        
         safe_tiles = max(delta, 0)
 
         # "Good move" semantics: only count if we actually revealed something new
@@ -108,6 +129,7 @@ class MinesweeperEnv(gym.Env):
 
         info["safe_move"] = safe_move
         info["safe_tiles"] = safe_tiles
+        info["progress"] = progress
 
         return obs, reward, False, False, info
 
